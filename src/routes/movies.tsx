@@ -7,6 +7,7 @@ import { useRequireAccount } from "../hooks/use-require-account";
 import { useCachedQuery, accountKey } from "../lib/queries";
 import { getVodCategories, getVodStreams } from "../lib/xtream";
 import { CategoryPanel } from "../components/CategoryPanel";
+import { useIsMobile, isTvDevice } from "../hooks/use-mobile";
 
 export const Route = createFileRoute("/movies")({
   validateSearch: (search: Record<string, string>) => ({
@@ -27,10 +28,13 @@ function MoviesPage() {
   const { sort } = Route.useSearch();
   const [cat, setCat] = useState(sort === "recent" ? "" : "all");
   const [visible, setVisible] = useState(60);
-  const [showItems, setShowItems] = useState(false);
+  const isMobile = useIsMobile();
+  const isTV = isTvDevice();
+  const isDesktopOrTv = isTV || !isMobile;
+  const [showItems, setShowItems] = useState(isDesktopOrTv);
 
-  const categories = useCachedQuery(`${key}:vodcats`, () => getVodCategories(account!), { enabled: !!account });
-  const movies = useCachedQuery(`${key}:vod:all`, () => getVodStreams(account!), { enabled: !!account });
+  const categories = useCachedQuery(key + ":vodcats", () => getVodCategories(account!), { enabled: !!account });
+  const movies = useCachedQuery(key + ":vod:all", () => getVodStreams(account!), { enabled: !!account });
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -56,6 +60,16 @@ function MoviesPage() {
     setCat(c);
     setVisible(60);
     setShowItems(true);
+    setTimeout(() => {
+      const container = document.querySelector(".items-grid-container");
+      if (container) {
+        const firstItem = container.querySelector<HTMLElement>(".focusable");
+        if (firstItem) {
+          firstItem.focus();
+          firstItem.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+      }
+    }, 150);
   };
 
   const activeName =
@@ -81,18 +95,18 @@ function MoviesPage() {
           <h1 className="font-display text-2xl font-extrabold">Filmes</h1>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <div className={"grid items-start gap-6 " + (isDesktopOrTv ? "grid-cols-[260px_1fr]" : "")}>
           {/* Seleções */}
-          <div className={showItems ? "hidden lg:block" : "block"}>
+          <div className={"selections-container sticky top-20 " + (showItems && !isDesktopOrTv ? "hidden" : "block")}>
             <h2 className="mb-3 font-display text-lg font-bold">Seleções</h2>
             <div className="mb-2 space-y-1">
               <button
                 onClick={() => setCat("all")}
-                className={`focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={"focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " + (
                   cat === "all" && sort !== "recent"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
+                )}
               >
                 <Film className="h-4 w-4" />
                 Todos os filmes
@@ -101,11 +115,11 @@ function MoviesPage() {
               <Link
                 to="/movies"
                 search={{ sort: "recent" }}
-                className={`focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={"focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " + (
                   sort === "recent"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
+                )}
               >
                 <Sparkles className="h-4 w-4" />
                 Recém-lançados
@@ -123,14 +137,16 @@ function MoviesPage() {
           </div>
 
           {/* Filmes da seleção */}
-          <div className={showItems ? "block" : "hidden lg:block"}>
+          <div className={"items-grid-container " + (showItems || isDesktopOrTv ? "block" : "hidden")}>
             <div className="mb-1 flex items-center gap-2">
-              <button
-                onClick={() => setShowItems(false)}
-                className="focusable inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-2 text-sm font-medium lg:hidden"
-              >
-                <ArrowLeft className="h-4 w-4" /> Seleções
-              </button>
+              {!isDesktopOrTv && (
+                <button
+                  onClick={() => setShowItems(false)}
+                  className="focusable inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-2 text-sm font-medium"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Seleções
+                </button>
+              )}
               <h2 className="line-clamp-1 font-display text-lg font-bold">{activeName}</h2>
               <span className="ml-1 text-sm text-muted-foreground">{filtered.length}</span>
             </div>
@@ -171,7 +187,6 @@ function MoviesPage() {
     </AppShell>
   );
 }
-
 
 export function Grid({ children, skeleton }: { children?: React.ReactNode; skeleton?: boolean }) {
   if (skeleton) {

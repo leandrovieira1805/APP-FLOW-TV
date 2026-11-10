@@ -9,10 +9,15 @@
     "start": "node app.js",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "postinstall": "cd backend && npm install"
+    "format": "prettier --write ."
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^7.6.8",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/device": "^8.0.3",
+    "@capacitor/screen-orientation": "^8.0.1",
     "@hookform/resolvers": "^5.2.2",
     "@prisma/client": "^7.8.0",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -47,6 +52,7 @@
     "@tanstack/react-router": "^1.168.25",
     "@tanstack/react-start": "^1.167.50",
     "@tanstack/router-plugin": "^1.167.28",
+    "capacitor-video-player": "^6.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

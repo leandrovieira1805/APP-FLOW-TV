@@ -9,7 +9,9 @@ lerna-debug.log*
 
 # Environment variables
 .env
+*.local
 
+# Dependencies & Build Outputs
 node_modules
 dist
 dist-ssr
@@ -17,11 +19,53 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
-*.local
 
-# Wrangler / Cloudflare
+# Databases & Backups
+*.db
+*.db-journal
+*.sqlite
+*.bak*
+*.backup*
+backend/flowtv.db
+backend/prisma/dev.db
+backend/backup_*.json
+
+# Android Build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/*.iml
+android/app/*.iml
+android/local.properties
+.gradle/
+
+# Binaries & Downloads
+downloads/
+*.apk
+*.aab
+*.exe
+*.zip
+*.keystore
+*.jks
+android-wrapper1/
+patch*.cjs
+patch*.mjs
+patch*.js
+fix*.mjs
+fix*.py
+check*.cjs
+check*.sh
+cleanup*.sh
+final_check.sh
+investigate*.sh
+update_hook.cjs
+test_prisma_runtime.js
+
+# Wrangler / Cloudflare / Netlify
 .wrangler/
 .dev.vars
+.netlify/
 
 # Editor directories and files
 .vscode/*

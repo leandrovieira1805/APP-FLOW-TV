@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#06B6D4</color>
+    <color name="colorPrimaryDark">#070C1E</color>
+    <color name="colorAccent">#00E5FF</color>
+    <color name="colorBackground">#070C1E</color>
+    <color name="colorSurface">#131D38</color>
+    <color name="colorSurfaceFocused">#1D2C52</color>
+    <color name="colorOnPrimary">#FFFFFF</color>
+    <color name="textPrimary">#FFFFFF</color>
+    <color name="textSecondary">#CBD5E1</color>
+    <color name="cardStrokeDefault">#2A3859</color>
+    <color name="cardStrokeFocused">#00E5FF</color>
+</resources>

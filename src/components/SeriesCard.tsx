@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ContentCard } from "./ContentCard";
 import { useCachedQuery } from "../lib/queries";
 import { getSeriesInfo, type Account, type SeriesInfo, type SeriesItem, imageCandidates } from "../lib/xtream";
@@ -7,9 +7,10 @@ interface SeriesCardProps {
   account: Account;
   cacheKey: string;
   series: SeriesItem;
+  search?: Record<string, string>;
 }
 
-export function SeriesCard({ account, cacheKey, series }: SeriesCardProps) {
+export function SeriesCard({ account, cacheKey, series, search }: SeriesCardProps) {
   const initialImages = useMemo(() => {
     return [
       series.cover,
@@ -28,6 +29,10 @@ export function SeriesCard({ account, cacheKey, series }: SeriesCardProps) {
     { enabled: needsDetails, maxAgeMs: 24 * 60 * 60 * 1000 },
   );
 
+  const handleImageUnavailable = useCallback(() => {
+    setNeedsDetails(true);
+  }, []);
+
   const allImages = useMemo(() => {
     const images = [...initialImages];
     if (details.data) {
@@ -44,11 +49,12 @@ export function SeriesCard({ account, cacheKey, series }: SeriesCardProps) {
     <ContentCard
       to="/series/$id"
       params={{ id: String(series.series_id) }}
+      search={search}
       title={series.name}
       image={allImages[0]}
       fallbackImage={allImages.slice(1).join("|")}
       rating={series.rating}
-      onImageUnavailable={() => setNeedsDetails(true)}
+      onImageUnavailable={handleImageUnavailable}
     />
   );
 }

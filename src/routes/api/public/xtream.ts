@@ -19,6 +19,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Global memory cache for large Xtream payloads
+const responseCache = new Map<string, { data: any[]; timestamp: number }>();
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 export const Route = createFileRoute("/api/public/xtream")({
   server: {
     handlers: {
@@ -52,6 +56,34 @@ export const Route = createFileRoute("/api/public/xtream")({
           target.searchParams.set(k, v);
         }
 
+        const action = parsed.data.params?.action;
+        const part = parsed.data.params?.part;
+        const shouldCache = parsed.data.path === "player_api.php" && 
+                            (action === "get_vod_streams" || action === "get_series" || action === "get_live_streams");
+
+        if (shouldCache) {
+          const cacheKey = `${parsed.data.base}-${parsed.data.params?.username}-${action}`;
+          const cached = responseCache.get(cacheKey);
+          if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+            let resultData = cached.data;
+            if (Array.isArray(resultData)) {
+              if (part === "1") {
+                resultData = resultData.slice(0, Math.ceil(resultData.length / 2));
+              } else if (part === "2") {
+                resultData = resultData.slice(Math.ceil(resultData.length / 2));
+              }
+            }
+            return new Response(JSON.stringify(resultData), {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": "no-store",
+                ...corsHeaders,
+              },
+            });
+          }
+        }
+
         try {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 20000);
@@ -59,9 +91,6 @@ export const Route = createFileRoute("/api/public/xtream")({
             signal: controller.signal,
             redirect: "follow",
             headers: {
-              // Many Xtream panels block non-browser agents and answer with an
-              // error status, which we used to surface as a 502. Mimic a real
-              // device so different DNS providers accept the request.
               "User-Agent":
                 "Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36 FlowTV/1.0",
               Accept: "*/*",
@@ -72,14 +101,39 @@ export const Route = createFileRoute("/api/public/xtream")({
 
           const text = await upstream.text();
           if (!upstream.ok) {
-            // Return 200 with a fallback flag so the platform error boundary
-            // doesn't treat upstream failures as a fatal 5xx (blank screen).
             return json(
               { error: "UPSTREAM_ERROR", status: upstream.status, message: "Servidor indisponível.", fallback: true },
               200,
             );
           }
-          // Most player_api responses are JSON; xmltv is XML.
+
+          if (shouldCache) {
+            try {
+              const jsonParsed = JSON.parse(text);
+              if (Array.isArray(jsonParsed)) {
+                const cacheKey = `${parsed.data.base}-${parsed.data.params?.username}-${action}`;
+                responseCache.set(cacheKey, { data: jsonParsed, timestamp: Date.now() });
+                
+                let resultData = jsonParsed;
+                if (part === "1") {
+                  resultData = jsonParsed.slice(0, Math.ceil(jsonParsed.length / 2));
+                } else if (part === "2") {
+                  resultData = jsonParsed.slice(Math.ceil(jsonParsed.length / 2));
+                }
+                return new Response(JSON.stringify(resultData), {
+                  status: 200,
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-store",
+                    ...corsHeaders,
+                  },
+                });
+              }
+            } catch (e) {
+              // fallback
+            }
+          }
+
           const isJson = parsed.data.path === "player_api.php";
           return new Response(text, {
             status: 200,

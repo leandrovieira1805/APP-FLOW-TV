@@ -16,6 +16,9 @@ export const register = async (req, res) => {
     })
 
     if (existingUser) {
+      if (existingUser.blocked) {
+        return res.status(403).json({ error: 'User is blocked' })
+      }
       return res.status(400).json({ error: 'Email already in use' })
     }
 
@@ -83,6 +86,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' })
     }
 
+    if (user.blocked) {
+      return res.status(403).json({ error: 'User is blocked' })
+    }
+
     const isPasswordValid = await comparePassword(password, user.password)
 
     if (!isPasswordValid) {
@@ -134,6 +141,14 @@ export const refreshToken = async (req, res) => {
 
     if (!session || session.userId !== decoded.userId) {
       return res.status(403).json({ error: 'Invalid refresh token' })
+    }
+
+    // Check if user is blocked before issuing new tokens
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } })
+    if (user && user.blocked) {
+      // Delete the session so the blocked user can't try again
+      await prisma.session.delete({ where: { id: session.id } })
+      return res.status(403).json({ error: 'User is blocked' })
     }
 
     const newAccessToken = generateAccessToken(decoded.userId)

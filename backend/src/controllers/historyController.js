@@ -17,6 +17,9 @@ export const upsertHistory = async (req, res) => {
   try {
     const { contentType, contentId, episodeId, title, poster, position, duration } = req.body
 
+    const parsedPosition = Math.round(Number(position) || 0)
+    const parsedDuration = Math.round(Number(duration) || 0)
+
     const history = await prisma.history.upsert({
       where: {
         userId_contentType_contentId: {
@@ -29,8 +32,8 @@ export const upsertHistory = async (req, res) => {
         episodeId,
         title,
         poster,
-        position,
-        duration,
+        position: parsedPosition,
+        duration: parsedDuration,
       },
       create: {
         userId: req.user.id,
@@ -39,8 +42,8 @@ export const upsertHistory = async (req, res) => {
         episodeId,
         title,
         poster,
-        position,
-        duration,
+        position: parsedPosition,
+        duration: parsedDuration,
       },
     })
 

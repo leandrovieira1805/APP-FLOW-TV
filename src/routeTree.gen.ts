@@ -20,6 +20,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SeriesIndexRouteImport } from './routes/series.index'
 import { Route as SeriesIdRouteImport } from './routes/series.$id'
 import { Route as MovieIdRouteImport } from './routes/movie.$id'
+import { Route as HubBrandRouteImport } from './routes/hub.$brand'
 import { Route as ApiPublicXtreamRouteImport } from './routes/api/public/xtream'
 import { Route as ApiPublicStreamRouteImport } from './routes/api/public/stream'
 
@@ -78,6 +79,11 @@ const MovieIdRoute = MovieIdRouteImport.update({
   path: '/movie/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HubBrandRoute = HubBrandRouteImport.update({
+  id: '/hub/$brand',
+  path: '/hub/$brand',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicXtreamRoute = ApiPublicXtreamRouteImport.update({
   id: '/api/public/xtream',
   path: '/api/public/xtream',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/movies': typeof MoviesRoute
   '/search': typeof SearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/hub/$brand': typeof HubBrandRoute
   '/movie/$id': typeof MovieIdRoute
   '/series/$id': typeof SeriesIdRoute
   '/series/': typeof SeriesIndexRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/movies': typeof MoviesRoute
   '/search': typeof SearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/hub/$brand': typeof HubBrandRoute
   '/movie/$id': typeof MovieIdRoute
   '/series/$id': typeof SeriesIdRoute
   '/series': typeof SeriesIndexRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/movies': typeof MoviesRoute
   '/search': typeof SearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/hub/$brand': typeof HubBrandRoute
   '/movie/$id': typeof MovieIdRoute
   '/series/$id': typeof SeriesIdRoute
   '/series/': typeof SeriesIndexRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/movies'
     | '/search'
     | '/sitemap.xml'
+    | '/hub/$brand'
     | '/movie/$id'
     | '/series/$id'
     | '/series/'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/movies'
     | '/search'
     | '/sitemap.xml'
+    | '/hub/$brand'
     | '/movie/$id'
     | '/series/$id'
     | '/series'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/movies'
     | '/search'
     | '/sitemap.xml'
+    | '/hub/$brand'
     | '/movie/$id'
     | '/series/$id'
     | '/series/'
@@ -192,6 +204,7 @@ export interface RootRouteChildren {
   MoviesRoute: typeof MoviesRoute
   SearchRoute: typeof SearchRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  HubBrandRoute: typeof HubBrandRoute
   MovieIdRoute: typeof MovieIdRoute
   SeriesIdRoute: typeof SeriesIdRoute
   SeriesIndexRoute: typeof SeriesIndexRoute
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MovieIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/hub/$brand': {
+      id: '/hub/$brand'
+      path: '/hub/$brand'
+      fullPath: '/hub/$brand'
+      preLoaderRoute: typeof HubBrandRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/xtream': {
       id: '/api/public/xtream'
       path: '/api/public/xtream'
@@ -304,6 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   MoviesRoute: MoviesRoute,
   SearchRoute: SearchRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  HubBrandRoute: HubBrandRoute,
   MovieIdRoute: MovieIdRoute,
   SeriesIdRoute: SeriesIdRoute,
   SeriesIndexRoute: SeriesIndexRoute,

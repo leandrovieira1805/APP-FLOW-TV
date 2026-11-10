@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { imageCandidates } from "../lib/xtream";
 
 interface ContentCardProps {
+  search?: Record<string, string>;
   to: string;
   params?: Record<string, string>;
   title: string;
@@ -16,10 +17,12 @@ interface ContentCardProps {
   wide?: boolean; // landscape (channels)
 }
 
-export function ContentCard({ to, params, title, image, fallbackImage, onImageUnavailable, subtitle, rating, progress, wide }: ContentCardProps) {
+export function ContentCard({ to, params, search, title, image, fallbackImage, onImageUnavailable, subtitle, rating, progress, wide }: ContentCardProps) {
   const [failed, setFailed] = useState(false);
   const [sourceIndex, setSourceIndex] = useState(0);
   const notified = useRef(false);
+  const onImageUnavailableRef = useRef(onImageUnavailable);
+  onImageUnavailableRef.current = onImageUnavailable;
   
   const sources = useMemo(() => {
     const all: string[] = [];
@@ -52,9 +55,9 @@ export function ContentCard({ to, params, title, image, fallbackImage, onImageUn
   useEffect(() => {
     if (sources.length === 0 && !notified.current) {
       notified.current = true;
-      onImageUnavailable?.();
+      onImageUnavailableRef.current?.();
     }
-  }, [onImageUnavailable, sources.length]);
+  }, [sources.length]);
 
   const handleImageError = () => {
     if (sourceIndex < sources.length - 1) {
@@ -64,7 +67,7 @@ export function ContentCard({ to, params, title, image, fallbackImage, onImageUn
     setFailed(true);
     if (!notified.current) {
       notified.current = true;
-      onImageUnavailable?.();
+      onImageUnavailableRef.current?.();
     }
   };
 
@@ -72,6 +75,7 @@ export function ContentCard({ to, params, title, image, fallbackImage, onImageUn
     <Link
       to={to as never}
       params={params as never}
+      search={search as never}
       className="focusable group block w-full"
     >
       <div

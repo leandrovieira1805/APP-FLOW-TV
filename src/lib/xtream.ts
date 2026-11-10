@@ -1,3 +1,42 @@
+
+// ---------- Google Play Reviewer / Demo Mock Account ----------
+const IS_DEMO_USER = (username?: string) => {
+  const u = (username || "").trim().toLowerCase();
+  return u === "google_tester" || u === "reviewer" || u === "demo_user" || u === "test_user";
+};
+
+const DEMO_LIVE_CATS: Category[] = [
+  { category_id: "1", category_name: "Canais Ao Vivo (HD)" },
+  { category_id: "2", category_name: "Notícias & Variedades" },
+];
+
+const DEMO_LIVE_STREAMS: LiveStream[] = [
+  { stream_id: 101, name: "Big Buck Bunny HD Live", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg", category_id: "1" },
+  { stream_id: 102, name: "Tears of Steel 4K Live", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/e/e0/Tears_of_Steel_poster.jpg", category_id: "1" },
+  { stream_id: 103, name: "Sintel HD Live", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg", category_id: "2" },
+];
+
+const DEMO_VOD_CATS: Category[] = [
+  { category_id: "10", category_name: "Filmes em Destaque" },
+  { category_id: "11", category_name: "Animação & Ficção" },
+];
+
+const DEMO_VOD_STREAMS: VodStream[] = [
+  { stream_id: 201, name: "Big Buck Bunny", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg", category_id: "10", rating: "8.5" },
+  { stream_id: 202, name: "Tears of Steel", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/e/e0/Tears_of_Steel_poster.jpg", category_id: "10", rating: "8.2" },
+  { stream_id: 203, name: "Sintel", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg", category_id: "11", rating: "8.9" },
+  { stream_id: 204, name: "Elephant's Dream", stream_icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Elephants_Dream_poster.jpg/800px-Elephants_Dream_poster.jpg", category_id: "11", rating: "7.9" },
+];
+
+const DEMO_SERIES_CATS: Category[] = [
+  { category_id: "20", category_name: "Séries Populares" },
+];
+
+const DEMO_SERIES: SeriesItem[] = [
+  { series_id: 301, name: "Blender Open Creations", cover: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg", category_id: "20", rating: "9.0", plot: "A collection of open source animated short series produced by the Blender Foundation." },
+];
+
+import { Capacitor } from "@capacitor/core";
 // FLOW TV — Xtream Codes API client (browser side).
 // All JSON calls go through the server proxy at /api/public/xtream to avoid CORS.
 // Stream URLs are built locally and played directly by the video player.
@@ -67,23 +106,61 @@ export function normalizeBase(input: string): string {
 }
 
 async function apiCall<T>(account: Account, params: Record<string, string>): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch("/api/public/xtream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        base: account.base,
-        path: "player_api.php",
-        params: {
-          username: account.username,
-          password: account.password,
-          ...params,
+  let res: Response | null = null;
+  const isNative = Capacitor.isNativePlatform();
+
+  if (isNative) {
+    try {
+      const url = new URL("/player_api.php", account.base);
+      url.searchParams.set("username", account.username);
+      url.searchParams.set("password", account.password);
+      for (const [k, v] of Object.entries(params)) {
+        url.searchParams.set(k, v);
+      }
+      res = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          "User-Agent": "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)",
+          "Accept": "*/*",
         },
-      }),
-    });
-  } catch {
-    throw new FlowApiError("CONNECTION_FAILED");
+      });
+    } catch (e) {
+      console.warn("Direct native Xtream call failed, falling back to proxy:", e);
+    }
+  }
+
+  if (!res) {
+    try {
+      res = await fetch("/api/public/xtream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base: account.base,
+          path: "player_api.php",
+          params: {
+            username: account.username,
+            password: account.password,
+            ...params,
+          },
+        }),
+      });
+    } catch {
+      if (!isNative) {
+        try {
+          const url = new URL("/player_api.php", account.base);
+          url.searchParams.set("username", account.username);
+          url.searchParams.set("password", account.password);
+          for (const [k, v] of Object.entries(params)) {
+            url.searchParams.set(k, v);
+          }
+          res = await fetch(url.toString());
+        } catch {
+          throw new FlowApiError("CONNECTION_FAILED");
+        }
+      } else {
+        throw new FlowApiError("CONNECTION_FAILED");
+      }
+    }
   }
 
   if (!res.ok) {
@@ -98,42 +175,101 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
     throw new FlowApiError(code);
   }
 
-  let payload: unknown;
+  let payload: any;
   try {
     payload = await res.json();
   } catch {
     throw new FlowApiError("UNKNOWN");
   }
 
-  // The proxy now returns HTTP 200 with an error payload for upstream/network
-  // failures (avoids platform 5xx blank-screen). Detect and map those here.
-  if (payload && typeof payload === "object" && "error" in payload) {
-    const err = payload as { error?: string };
-    let code: FlowError = "CONNECTION_FAILED";
-    if (err.error === "DNS_UNAVAILABLE" || err.error === "INVALID_INPUT") code = "DNS_UNAVAILABLE";
-    else if (err.error === "UPSTREAM_ERROR") code = "CONNECTION_FAILED";
-    throw new FlowApiError(code);
+  // Detect upstream errors or auth rejections
+  if (payload && typeof payload === "object") {
+    if ("error" in payload) {
+      const err = payload as { error?: string; status?: number };
+      if (err.status === 401 || err.status === 403) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("auth-expired"));
+        }
+        throw new FlowApiError("ACCOUNT_EXPIRED");
+      }
+      let code: FlowError = "CONNECTION_FAILED";
+      if (err.error === "DNS_UNAVAILABLE" || err.error === "INVALID_INPUT") code = "DNS_UNAVAILABLE";
+      else if (err.error === "UPSTREAM_ERROR") code = "CONNECTION_FAILED";
+      throw new FlowApiError(code);
+    }
+
+    if (payload.user_info) {
+      if (payload.user_info.auth === 0 || isAccountExpired(payload.user_info)) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("auth-expired"));
+        }
+        throw new FlowApiError("ACCOUNT_EXPIRED");
+      }
+    }
+    if (payload.auth === 0) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth-expired"));
+      }
+      throw new FlowApiError("ACCOUNT_EXPIRED");
+    }
   }
 
   return payload as T;
 }
 
+
+export function parseExpiryDate(expDate: string | number | null | undefined): number | null {
+  if (!expDate || expDate === "null" || expDate === "0" || expDate === 0 || expDate === "unlimited") {
+    return null;
+  }
+  if (typeof expDate === "number") {
+    return expDate < 1e11 ? expDate * 1000 : expDate;
+  }
+  const num = Number(expDate);
+  if (!Number.isNaN(num) && num > 0) {
+    return num < 1e11 ? num * 1000 : num;
+  }
+  const parsed = Date.parse(expDate);
+  if (!Number.isNaN(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return null;
+}
+
+export function isAccountExpired(info: UserInfo | null | undefined): boolean {
+  if (!info) return false;
+  if (info.auth === 0) return true;
+  if (info.status) {
+    const s = String(info.status).toLowerCase().trim();
+    if (["expired", "banned", "disabled", "inactive", "suspended"].includes(s)) {
+      return true;
+    }
+  }
+  const expMs = parseExpiryDate(info.exp_date);
+  if (expMs !== null && expMs < Date.now()) {
+    return true;
+  }
+  return false;
+}
+
 export async function authenticate(account: Account): Promise<UserInfo> {
+  if (IS_DEMO_USER(account.username)) {
+    return {
+      username: account.username,
+      status: "Active",
+      exp_date: "4102444800",
+      is_trial: "0",
+      active_cons: "0",
+      max_connections: "5",
+    };
+  }
   const data = await apiCall<{ user_info?: UserInfo & { auth?: number } }>(account, {});
   const info = data.user_info;
   if (!info || info.auth === 0) {
-    // Xtream returns auth:0 for bad credentials; we can't distinguish user vs pass reliably.
     throw new FlowApiError("INVALID_USER");
   }
-  if (info.status && info.status.toLowerCase() !== "active") {
+  if (isAccountExpired(info)) {
     throw new FlowApiError("ACCOUNT_EXPIRED");
-  }
-  // Expiry check
-  if (info.exp_date) {
-    const exp = Number(info.exp_date) * 1000;
-    if (!Number.isNaN(exp) && exp < Date.now()) {
-      throw new FlowApiError("ACCOUNT_EXPIRED");
-    }
   }
   return info;
 }
@@ -142,6 +278,22 @@ export async function authenticateWithDnsFallback(
   bases: string[],
   credentials: Pick<Account, "username" | "password">,
 ): Promise<{ account: Account; info: UserInfo }> {
+  if (IS_DEMO_USER(credentials.username)) {
+    const account: Account = {
+      base: "mock://demo",
+      username: credentials.username.trim(),
+      password: credentials.password.trim(),
+    };
+    const info: UserInfo = {
+      username: credentials.username.trim(),
+      status: "Active",
+      exp_date: "4102444800",
+      is_trial: "0",
+      active_cons: "0",
+      max_connections: "5",
+    };
+    return { account, info };
+  }
   const normalizedBases = Array.from(
     new Set(
       bases
@@ -263,22 +415,28 @@ function normalizeCategories(list: unknown): Category[] {
 }
 
 export const getLiveCategories = async (a: Account) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") return DEMO_LIVE_CATS;
   const data = await apiCall<unknown>(a, { action: "get_live_categories" });
   console.log("getLiveCategories received:", data);
   return normalizeCategories(data);
 };
 export const getVodCategories = async (a: Account) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") return DEMO_VOD_CATS;
   const data = await apiCall<unknown>(a, { action: "get_vod_categories" });
   console.log("getVodCategories received:", data);
   return normalizeCategories(data);
 };
 export const getSeriesCategories = async (a: Account) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") return DEMO_SERIES_CATS;
   const data = await apiCall<unknown>(a, { action: "get_series_categories" });
   console.log("getSeriesCategories received:", data);
   return normalizeCategories(data);
 };
 
 export const getLiveStreams = async (a: Account, categoryId?: string) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return categoryId ? DEMO_LIVE_STREAMS.filter(s => s.category_id === categoryId) : DEMO_LIVE_STREAMS;
+  }
   const data = await apiCall<unknown>(a, {
     action: "get_live_streams",
     ...(categoryId ? { category_id: categoryId } : {}),
@@ -287,14 +445,23 @@ export const getLiveStreams = async (a: Account, categoryId?: string) => {
   return normalizeLiveStreams(data, a.base);
 };
 export const getVodStreams = async (a: Account, categoryId?: string) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return categoryId ? DEMO_VOD_STREAMS.filter(s => s.category_id === categoryId) : DEMO_VOD_STREAMS;
+  }
   const data = await apiCall<unknown>(a, {
     action: "get_vod_streams",
     ...(categoryId ? { category_id: categoryId } : {}),
   });
   console.log("getVodStreams received:", data);
-  return normalizeVodStreams(data, a.base);
+  const all = normalizeVodStreams(data, a.base);
+  // Filtrar conteúdo 4K/UHD/HDR/Dolby Vision (incompatível sem GPU dedicada)
+  const is4K = (name: string) => /\b(4k|uhd|2160p|hevc|h\.?265|hdr|dolby|\[dv\]|\[hdr\])/i.test(name || "");
+  return all.filter((m) => !is4K(m.name || "") && !is4K(m.title || ""));
 };
 export const getSeries = async (a: Account, categoryId?: string) => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return categoryId ? DEMO_SERIES.filter(s => s.category_id === categoryId) : DEMO_SERIES;
+  }
   const data = await apiCall<unknown>(a, {
     action: "get_series",
     ...(categoryId ? { category_id: categoryId } : {}),
@@ -303,10 +470,47 @@ export const getSeries = async (a: Account, categoryId?: string) => {
   return normalizeSeriesList(data, a.base);
 };
 
-export const getVodInfo = async (a: Account, vodId: number) =>
-  normalizeVodInfo(await apiCall<VodInfo>(a, { action: "get_vod_info", vod_id: String(vodId) }), a.base);
-export const getSeriesInfo = async (a: Account, seriesId: number) =>
-  normalizeSeriesInfo(await apiCall<SeriesInfo>(a, { action: "get_series_info", series_id: String(seriesId) }), a.base);
+export const getVodInfo = async (a: Account, vodId: number): Promise<VodInfo> => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return {
+      info: {
+        movie_image: "https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg",
+        plot: "Big Buck Bunny tells the story of a giant rabbit with a heart bigger than himself.",
+        genre: "Animation, Short, Comedy",
+        rating: "8.5",
+        duration: "10 min",
+        releasedate: "2008-04-10",
+        cast: "Big Buck Bunny, Jan Morgenstern",
+        director: "Sacha Goedegebure",
+        backdrop_path: ["https://upload.wikimedia.org/wikipedia/commons/c/c5/Big_buck_bunny_poster_big.jpg"]
+      },
+      movie_data: { stream_id: vodId, name: "Big Buck Bunny", container_extension: "mp4" }
+    };
+  }
+  return normalizeVodInfo(await apiCall<VodInfo>(a, { action: "get_vod_info", vod_id: String(vodId) }), a.base);
+};
+export const getSeriesInfo = async (a: Account, seriesId: number): Promise<SeriesInfo> => {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return {
+      info: {
+        name: "Blender Open Creations",
+        cover: "https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg",
+        plot: "Open source animated short films by the Blender Institute.",
+        genre: "Animation, Sci-Fi, Fantasy",
+        rating: "9.0",
+        releaseDate: "2010"
+      },
+      seasons: [{ season_number: 1, name: "Season 1" }],
+      episodes: {
+        "1": [
+          { id: "1001", episode_num: 1, title: "Episode 1 - Sintel", container_extension: "mp4", info: { duration_secs: 900, plot: "A lonely young woman searches for a dragon." } },
+          { id: "1002", episode_num: 2, title: "Episode 2 - Tears of Steel", container_extension: "mp4", info: { duration_secs: 720, plot: "Set in a dystopian future in Amsterdam." } }
+        ]
+      }
+    };
+  }
+  return normalizeSeriesInfo(await apiCall<SeriesInfo>(a, { action: "get_series_info", series_id: String(seriesId) }), a.base);
+};
 
 function normalizeMediaUrl(url: string | undefined, base: string): string {
   const raw = (url ?? "").trim().replace(/\\\//g, "/");
@@ -407,6 +611,10 @@ function normalizeSeriesInfo(data: SeriesInfo, base: string): SeriesInfo {
 // on HTTPS, so the browser blocks them as mixed content and the images never
 // appear. Route HTTP images through the HTTPS media proxy so they always load.
 export function proxiedImage(url?: string): string | undefined {
+  if (!url) return undefined;
+  const u = url.trim();
+  if (!u) return undefined;
+  if (Capacitor.isNativePlatform()) return u;
   return imageCandidates(url)[0];
 }
 
@@ -421,24 +629,42 @@ export function imageCandidates(url?: string): string[] {
   return [u];
 }
 
-function proxiedUrl(absoluteUrl: string): string {
-  if (typeof window === "undefined") return absoluteUrl;
-  const hls = /\.m3u8($|\?)/i.test(absoluteUrl) ? "&ext=.m3u8" : "";
-  return `/api/public/stream?url=${encodeURIComponent(absoluteUrl)}${hls}`;
+function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
+  if (typeof window === "undefined" || Capacitor.isNativePlatform()) {
+    return absoluteUrl;
+  }
+  if (forceTranscode) {
+    return `/api/public/transcode.m3u8?url=${encodeURIComponent(absoluteUrl)}`;
+  }
+  const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
+  const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
+  const ext = isHls ? "&ext=.m3u8" : "";
+  return `${path}?url=${encodeURIComponent(absoluteUrl)}${ext}`;
 }
 
 export function liveStreamUrl(a: Account, streamId: number): string {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+  }
   return proxiedUrl(
     `${a.base}/live/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.m3u8`,
   );
 }
-export function vodStreamUrl(a: Account, streamId: number, ext = "mp4"): string {
-  return proxiedUrl(
-    `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${ext}`,
-  );
+export function vodStreamUrl(a: Account, streamId: number, ext = "mp4", title = ""): string {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    if (streamId === 202) return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4";
+    if (streamId === 203) return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
+    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+  }
+  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${cleanExt}`;
+  return proxiedUrl(rawUrl);
 }
-export function seriesStreamUrl(a: Account, episodeId: string, ext = "mp4"): string {
-  return proxiedUrl(
-    `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${ext}`,
-  );
+export function seriesStreamUrl(a: Account, episodeId: string, ext = "mp4", title = ""): string {
+  if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
+    return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4";
+  }
+  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${cleanExt}`;
+  return proxiedUrl(rawUrl);
 }

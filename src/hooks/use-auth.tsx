@@ -24,6 +24,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     };
     initialize();
+
+    // Listen for auto-sync login events to reload user
+    const onSync = () => {
+      loadTokensFromStorage();
+      setUser(getCurrentUser());
+    };
+    window.addEventListener('auth-sync', onSync);
+    return () => window.removeEventListener('auth-sync', onSync);
   }, []);
 
   const handleSignIn = async (email: string, password: string) => {

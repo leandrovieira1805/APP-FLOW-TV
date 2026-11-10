@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Heart } from "lucide-react";
+import { Heart, Loader2 } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { ContentCard } from "../components/ContentCard";
 import { Grid } from "./movies";
-import { loadFavorites, type Favorite } from "../lib/storage";
+import { useFavorites } from "../hooks/use-supabase-data";
 
 export const Route = createFileRoute("/favorites")({
   head: () => ({
@@ -17,13 +16,10 @@ export const Route = createFileRoute("/favorites")({
 });
 
 function FavoritesPage() {
-  const [favs, setFavs] = useState<Favorite[]>([]);
-  useEffect(() => {
-    setFavs(loadFavorites());
-  }, []);
+  const { favorites, isLoading } = useFavorites();
 
-  const routeFor = (f: Favorite) =>
-    f.type === "movie" ? "/movie/$id" : f.type === "series" ? "/series/$id" : "/live";
+  const routeFor = (contentType: "live" | "movie" | "series") =>
+    contentType === "movie" ? "/movie/$id" : contentType === "series" ? "/series/$id" : "/live";
 
   return (
     <AppShell>
@@ -33,7 +29,11 @@ function FavoritesPage() {
           <h1 className="font-display text-2xl font-extrabold">Favoritos</h1>
         </div>
 
-        {favs.length === 0 ? (
+        {isLoading ? (
+          <div className="mt-16 flex justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : favorites.length === 0 ? (
           <div className="mt-16 text-center text-muted-foreground">
             <Heart className="mx-auto mb-3 h-10 w-10 opacity-40" />
             <p>Você ainda não adicionou favoritos.</p>
@@ -41,13 +41,13 @@ function FavoritesPage() {
           </div>
         ) : (
           <Grid>
-            {favs.map((f) => (
+            {favorites.map((f) => (
               <ContentCard
                 key={f.id}
-                to={routeFor(f)}
-                params={f.type === "live" ? undefined : { id: String(f.refId) }}
+                to={routeFor(f.contentType)}
+                params={f.contentType === "live" ? undefined : { id: String(f.contentId) }}
                 title={f.title}
-                image={f.poster}
+                image={f.poster || ""}
               />
             ))}
           </Grid>

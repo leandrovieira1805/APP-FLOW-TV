@@ -118,11 +118,14 @@ async function handle(request: Request): Promise<Response> {
     return new Response("Upstream connection failed", { status: 502 });
   }
 
+  const finalUrl = upstream.url || target;
   const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
   const isPlaylist =
-    /\.m3u8($|\?)/i.test(target) ||
-    contentType.includes("mpegurl") ||
-    contentType.includes("application/x-mpegurl");
+    (contentType.includes("mpegurl") || contentType.includes("x-mpegurl")) ||
+    (/\.m3u8($|\?)/i.test(finalUrl) && 
+     !contentType.includes("video/") && 
+     !contentType.includes("application/octet-stream") &&
+     !contentType.includes("binary/"));
 
   const headers = new Headers();
   headers.set("Access-Control-Allow-Origin", "*");
@@ -151,3 +154,4 @@ async function handle(request: Request): Promise<Response> {
 
   return new Response(upstream.body, { status: upstream.status, headers });
 }
+

@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <!-- Capacitor required strings -->
+    <string name="app_name">FLOW TV</string>
+    <string name="title_activity_main">FLOW TV</string>
+    <string name="package_name">com.flowtv.wrapper</string>
+    <string name="custom_url_scheme">com.flowtv.wrapper</string>
+
+    <!-- App URL -->
+    <string name="remote_app_url">http://147.93.0.225/</string>
+
+    <!-- Device selection screen -->
+    <string name="welcome_title">Bem-vindo</string>
+    <string name="selection_subtitle">Escolha onde você deseja utilizar o aplicativo.</string>
+    <string name="mobile_title">Celular</string>
+    <string name="mobile_description">Versão otimizada para smartphones.</string>
+    <string name="tv_title">Android TV</string>
+    <string name="tv_description">Versão otimizada para Smart TVs e TV Box.</string>
+    <string name="continue_button">Continuar</string>
+
+    <!-- Menu -->
+    <string name="change_device_title">Alterar dispositivo</string>
+    <string name="change_device_message">Deseja alterar o tipo de dispositivo?</string>
+    <string name="yes">Sim</string>
+    <string name="no">Não</string>
+
+    <!-- Error screen -->
+    <string name="no_internet_title">Sem conexão</string>
+    <string name="no_internet_message">Verifique sua conexão com a internet e tente novamente.</string>
+    <string name="try_again">Tentar novamente</string>
+</resources>

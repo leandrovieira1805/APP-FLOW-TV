@@ -33,7 +33,7 @@ export function CategoryPanel({
   }
 
   return (
-    <ul className="max-h-[60vh] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-180px)]">
+    <ul className="max-h-[60vh] space-y-1 overflow-y-auto pr-1 lg:max-h-[calc(100vh-220px)]">
       {all.map((c) => (
         <li key={c.category_id}>
           <button

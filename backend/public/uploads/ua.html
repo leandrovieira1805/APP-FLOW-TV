@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Diagnostico de User Agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #0c1116; color: #fff; word-break: break-all; }
+    h1 { color: #58a6ff; }
+    pre { background: #161b22; padding: 15px; border-radius: 8px; border: 1px border #30363d; font-size: 16px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Seu User-Agent:</h1>
+  <pre id="ua"></pre>
+  <script>
+    document.getElementById('ua').innerText = navigator.userAgent;
+  </script>
+</body>
+</html>

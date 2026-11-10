@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Loader2, Clapperboard, ArrowLeft, Sparkles } from "lucide-react";
 import { AppShell } from "../components/AppShell";
 import { SeriesCard } from "../components/SeriesCard";
@@ -8,10 +8,12 @@ import { useCachedQuery, accountKey } from "../lib/queries";
 import { getSeriesCategories, getSeries } from "../lib/xtream";
 import { CategoryPanel } from "../components/CategoryPanel";
 import { Grid } from "./movies";
+import { useIsMobile, isTvDevice } from "../hooks/use-mobile";
 
 export const Route = createFileRoute("/series/")({
   validateSearch: (search: Record<string, string>) => ({
     sort: search.sort as "recent" | undefined,
+    provider: search.provider as string | undefined,
   }),
   head: () => ({
     meta: [
@@ -25,13 +27,28 @@ export const Route = createFileRoute("/series/")({
 function SeriesPage() {
   const { account, ready } = useRequireAccount();
   const key = accountKey(account);
-  const { sort } = Route.useSearch();
+  const { sort, provider } = Route.useSearch();
   const [cat, setCat] = useState(sort === "recent" ? "" : "all");
   const [visible, setVisible] = useState(60);
-  const [showItems, setShowItems] = useState(false);
+  const isMobile = useIsMobile();
+  const isTV = isTvDevice();
+  const isDesktopOrTv = isTV || !isMobile;
+  const [showItems, setShowItems] = useState(isDesktopOrTv);
 
-  const categories = useCachedQuery(`${key}:seriescats`, () => getSeriesCategories(account!), { enabled: !!account });
-  const series = useCachedQuery(`${key}:series:all`, () => getSeries(account!), { enabled: !!account });
+  const categories = useCachedQuery(key + ":seriescats", () => getSeriesCategories(account!), { enabled: !!account });
+  const series = useCachedQuery(key + ":series:all", () => getSeries(account!), { enabled: !!account });
+
+  const lastProvider = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (provider && categories.data && lastProvider.current !== provider) {
+      const targetCat = categories.data.find((c) => c.category_name.toLowerCase().includes(provider.toLowerCase()));
+      if (targetCat) {
+        setCat(targetCat.category_id);
+        setShowItems(true);
+      }
+      lastProvider.current = provider;
+    }
+  }, [provider, categories.data]);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -57,6 +74,16 @@ function SeriesPage() {
     setCat(c);
     setVisible(60);
     setShowItems(true);
+    setTimeout(() => {
+      const container = document.querySelector(".items-grid-container");
+      if (container) {
+        const firstItem = container.querySelector<HTMLElement>(".focusable");
+        if (firstItem) {
+          firstItem.focus();
+          firstItem.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+      }
+    }, 150);
   };
 
   const activeName =
@@ -82,18 +109,18 @@ function SeriesPage() {
           <h1 className="font-display text-2xl font-extrabold">Séries</h1>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <div className={"grid items-start gap-6 " + (isDesktopOrTv ? "grid-cols-[260px_1fr]" : "")}>
           {/* Seleções */}
-          <div className={showItems ? "hidden lg:block" : "block"}>
+          <div className={"selections-container sticky top-20 " + (showItems && !isDesktopOrTv ? "hidden" : "block")}>
             <h2 className="mb-3 font-display text-lg font-bold">Seleções</h2>
             <div className="mb-2 space-y-1">
               <button
                 onClick={() => setCat("all")}
-                className={`focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={"focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " + (
                   cat === "all" && sort !== "recent"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
+                )}
               >
                 <Clapperboard className="h-4 w-4" />
                 Todas as séries
@@ -102,11 +129,11 @@ function SeriesPage() {
               <Link
                 to="/series"
                 search={{ sort: "recent" }}
-                className={`focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                className={"focusable flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors " + (
                   sort === "recent"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-card hover:text-foreground"
-                }`}
+                )}
               >
                 <Sparkles className="h-4 w-4" />
                 Recém-lançados
@@ -124,14 +151,16 @@ function SeriesPage() {
           </div>
 
           {/* Séries da seleção */}
-          <div className={showItems ? "block" : "hidden lg:block"}>
+          <div className={"items-grid-container " + (showItems || isDesktopOrTv ? "block" : "hidden")}>
             <div className="mb-1 flex items-center gap-2">
-              <button
-                onClick={() => setShowItems(false)}
-                className="focusable inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-2 text-sm font-medium lg:hidden"
-              >
-                <ArrowLeft className="h-4 w-4" /> Seleções
-              </button>
+              {!isDesktopOrTv && (
+                <button
+                  onClick={() => setShowItems(false)}
+                  className="focusable inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-2 text-sm font-medium"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Seleções
+                </button>
+              )}
               <h2 className="line-clamp-1 font-display text-lg font-bold">{activeName}</h2>
               <span className="ml-1 text-sm text-muted-foreground">{filtered.length}</span>
             </div>
@@ -165,4 +194,3 @@ function SeriesPage() {
     </AppShell>
   );
 }
-

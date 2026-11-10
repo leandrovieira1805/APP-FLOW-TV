@@ -224,3 +224,70 @@ export const deleteAd = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+export const getUsersWithPassword = async (req, res) => {
+  try {
+    const { password } = req.body;
+    const config = await prisma.appConfig.findUnique({ where: { id: 1 } });
+    if (!config) return res.status(401).json({ error: "Unauthorized" });
+    const ok = await comparePassword(password, config.adminPassword);
+    if (!ok) return res.status(401).json({ error: "Invalid admin password" });
+
+    const users = await prisma.user.findMany({
+      include: { 
+        plan: true,
+        sessions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(users);
+  } catch (error) {
+    console.error("[getUsersWithPassword] Error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const deleteUserWithPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    const config = await prisma.appConfig.findUnique({ where: { id: 1 } });
+    if (!config) return res.status(401).json({ error: "Unauthorized" });
+    const ok = await comparePassword(password, config.adminPassword);
+    if (!ok) return res.status(401).json({ error: "Invalid admin password" });
+
+    await prisma.user.delete({
+      where: { id },
+    });
+    res.json({ message: "User deleted successfully" });
+  } catch (error) {
+    console.error("[deleteUserWithPassword] Error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const toggleUserBlockWithPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    const config = await prisma.appConfig.findUnique({ where: { id: 1 } });
+    if (!config) return res.status(401).json({ error: "Unauthorized" });
+    const ok = await comparePassword(password, config.adminPassword);
+    if (!ok) return res.status(401).json({ error: "Invalid admin password" });
+
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: { blocked: !user.blocked },
+    });
+    res.json({ message: "User block status toggled", blocked: updatedUser.blocked });
+  } catch (error) {
+    console.error("[toggleUserBlockWithPassword] Error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
