@@ -163,7 +163,27 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
     }
   }
 
-  if (!res.ok) {
+  // Se o proxy retornar erro (ex: 404, 502), tenta chamada direta antes de falhar
+  if (!res || !res.ok) {
+    if (!isNative) {
+      try {
+        const url = new URL("/player_api.php", account.base);
+        url.searchParams.set("username", account.username);
+        url.searchParams.set("password", account.password);
+        for (const [k, v] of Object.entries(params)) {
+          url.searchParams.set(k, v);
+        }
+        const directRes = await fetch(url.toString());
+        if (directRes.ok) {
+          res = directRes;
+        }
+      } catch {
+        /* fallback falhou */
+      }
+    }
+  }
+
+  if (!res || !res.ok) {
     let code: FlowError = "CONNECTION_FAILED";
     try {
       const err = (await res.json()) as { error?: string };

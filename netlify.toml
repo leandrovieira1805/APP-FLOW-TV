@@ -1,11 +1,24 @@
 [build]
   command = "npm run build"
   publish = "dist/client"
+  functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
   VITE_SUPABASE_URL = "https://sifllowuedmwexkqqpgv.supabase.co"
   VITE_SUPABASE_ANON_KEY = "sb_publishable_eIal7uFrndU1hDsxcQaL7Q_hY0dsR-r"
+
+[[redirects]]
+  from = "/api/public/xtream"
+  to = "/.netlify/functions/xtream"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/public/stream"
+  to = "/.netlify/functions/stream"
+  status = 200
+  force = true
 
 [[redirects]]
   from = "/*"
