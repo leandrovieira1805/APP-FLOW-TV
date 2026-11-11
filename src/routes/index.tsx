@@ -192,47 +192,6 @@ function Home() {
           );
         })()}
 
-        {/* Hero */}
-        {featured && (
-          <div className="px-4 lg:px-12">
-            <section className="relative h-[56vh] min-h-[380px] w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
-              {featured.stream_icon && (
-                <img
-                  src={proxiedImage(featured.stream_icon)}
-                  alt={featured.name}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-transparent" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
-              <div className="relative z-10 flex h-full flex-col justify-end p-6 lg:p-12">
-                <div className="w-fit rounded-full bg-primary px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-glow">
-                  Em destaque
-                </div>
-                <h1 className="mt-3 max-w-2xl font-display text-3xl font-extrabold leading-tight text-white drop-shadow-lg lg:text-5xl">
-                  {featured.name}
-                </h1>
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <Link
-                    to="/movie/$id"
-                    params={{ id: String(featured.stream_id) }}
-                    className="focusable inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-glow transition-transform hover:scale-105"
-                  >
-                    <Play className="h-5 w-5" fill="currentColor" /> Assistir
-                  </Link>
-                  <Link
-                    to="/movie/$id"
-                    params={{ id: String(featured.stream_id) }}
-                    className="focusable inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 px-6 py-3 font-semibold text-white backdrop-blur transition-colors hover:bg-white/20"
-                  >
-                    <Info className="h-5 w-5" /> Detalhes
-                  </Link>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
         <div className="space-y-10 px-4 py-8 lg:px-12">
           
           <StreamingRow />
