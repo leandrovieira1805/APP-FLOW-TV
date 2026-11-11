@@ -88,12 +88,10 @@ async function handle(request: Request): Promise<Response> {
   const targetOrigin = new URL(target).origin;
   const looksLikeImage = reqUrl.searchParams.get("kind") === "image" || /\.(avif|bmp|gif|jpe?g|png|svg|webp)(\?|$)/i.test(target);
   const upstreamHeaders: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    Accept: looksLikeImage ? "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8" : "*/*",
+    "User-Agent": "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)",
+    Accept: looksLikeImage ? "text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8" : "*/*",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
     Referer: `${targetOrigin}/`,
-    "Upgrade-Insecure-Requests": "1",
   };
   if (!looksLikeImage) upstreamHeaders.Origin = targetOrigin;
   const range = request.headers.get("range");
