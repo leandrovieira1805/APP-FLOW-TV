@@ -21,6 +21,111 @@ function json(data, status = 200) {
   });
 }
 
+export async function handler(event, context) {
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 204,
+      headers: corsHeaders,
+      body: "",
+    };
+  }
+
+  let body;
+  try {
+    if (event.httpMethod === "POST") {
+      body = typeof event.body === "string" ? JSON.parse(event.body) : (event.body || {});
+    } else {
+      const q = event.queryStringParameters || {};
+      const { base, path = "player_api.php", ...params } = q;
+      body = { base, path, params };
+    }
+  } catch (err) {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+      body: JSON.stringify({ error: "INVALID_BODY", message: "Requisição inválida." }),
+    };
+  }
+
+  const { base, path = "player_api.php", params = {} } = body || {};
+
+  if (!base || typeof base !== "string") {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+      body: JSON.stringify({ error: "INVALID_INPUT", message: "Dados de conexão inválidos (base ausente)." }),
+    };
+  }
+
+  let baseUrl;
+  try {
+    const rawBase = base.trim();
+    baseUrl = new URL(rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `http://${rawBase}`);
+  } catch {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+      body: JSON.stringify({ error: "DNS_UNAVAILABLE", message: "Endereço do servidor (DNS) inválido." }),
+    };
+  }
+
+  if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
+    return {
+      statusCode: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+      body: JSON.stringify({ error: "DNS_UNAVAILABLE", message: "Protocolo do servidor inválido." }),
+    };
+  }
+
+  const allowedPath = path === "xmltv.php" ? "xmltv.php" : "player_api.php";
+  const target = new URL(allowedPath, baseUrl);
+
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) {
+      target.searchParams.set(k, String(v));
+    }
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    const upstream = await fetch(target.toString(), {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36 FlowTV/1.0",
+        Accept: "*/*",
+        Referer: `${baseUrl.origin}/`,
+      },
+    });
+    clearTimeout(timeout);
+
+    const text = await upstream.text();
+    const isJson = allowedPath === "player_api.php";
+    return {
+      statusCode: upstream.ok ? 200 : upstream.status,
+      headers: {
+        "Content-Type": isJson ? "application/json" : "application/xml",
+        "Cache-Control": "no-store",
+        ...corsHeaders,
+      },
+      body: text,
+    };
+  } catch (err) {
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+      body: JSON.stringify({
+        error: "CONNECTION_FAILED",
+        message: "Não foi possível conectar ao servidor (DNS/rede).",
+        fallback: true,
+      }),
+    };
+  }
+}
+
 export default async (request, context) => {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });

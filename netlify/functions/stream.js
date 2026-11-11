@@ -51,6 +51,101 @@ const passHeaders = [
   "cache-control",
 ];
 
+export async function handler(event, context) {
+  if (event.httpMethod === "OPTIONS") {
+    return {
+      statusCode: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "Range, Content-Type",
+      },
+      body: "",
+    };
+  }
+
+  const q = event.queryStringParameters || {};
+  const target = q.url;
+  if (!target || !isHttpUrl(target)) {
+    return { statusCode: 400, body: "Invalid url" };
+  }
+
+  let targetOrigin = "";
+  try {
+    targetOrigin = new URL(target).origin;
+  } catch {
+    return { statusCode: 400, body: "Invalid url target" };
+  }
+
+  const looksLikeImage = q.kind === "image" || /\.(avif|bmp|gif|jpe?g|png|svg|webp)(\?|$)/i.test(target);
+  const upstreamHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    Accept: looksLikeImage ? "text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8" : "*/*",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    Referer: `${targetOrigin}/`,
+  };
+  if (!looksLikeImage) upstreamHeaders.Origin = targetOrigin;
+  if (event.headers && event.headers.range) upstreamHeaders["Range"] = event.headers.range;
+
+  try {
+    const controller = new AbortController();
+    const timeoutMs = looksLikeImage ? 10000 : 30000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const upstream = await fetch(target, {
+      method: event.httpMethod === "HEAD" ? "HEAD" : "GET",
+      headers: upstreamHeaders,
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
+    const isPlaylist = (contentType.includes("mpegurl") || contentType.includes("x-mpegurl")) || /\.m3u8($|\?)/i.test(upstream.url || target);
+
+    const headers = { "Access-Control-Allow-Origin": "*" };
+    if (isPlaylist) {
+      const text = await upstream.text();
+      const rewritten = rewriteM3u8(text, upstream.url || target);
+      headers["Content-Type"] = "application/vnd.apple.mpegurl";
+      headers["Cache-Control"] = "no-store";
+      return {
+        statusCode: upstream.status,
+        headers,
+        body: rewritten,
+      };
+    }
+
+    for (const h of passHeaders) {
+      const v = upstream.headers.get(h);
+      if (v) headers[h] = v;
+    }
+    if (!headers["Accept-Ranges"]) headers["Accept-Ranges"] = "bytes";
+
+    if (looksLikeImage) {
+      const buffer = await upstream.arrayBuffer();
+      headers["Cache-Control"] = "public, max-age=604800, immutable";
+      return {
+        statusCode: upstream.status,
+        headers,
+        isBase64Encoded: true,
+        body: Buffer.from(buffer).toString("base64"),
+      };
+    }
+
+    return {
+      statusCode: 302,
+      headers: {
+        Location: upstream.url || target,
+        "Access-Control-Allow-Origin": "*",
+      },
+      body: "",
+    };
+  } catch {
+    return { statusCode: 502, body: "Upstream connection failed" };
+  }
+}
+
 export default async (request, context) => {
   if (request.method === "OPTIONS") {
     return new Response(null, {

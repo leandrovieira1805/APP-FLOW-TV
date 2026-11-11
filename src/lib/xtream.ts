@@ -145,21 +145,31 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
         }),
       });
     } catch {
-      if (!isNative) {
-        try {
-          const url = new URL("/player_api.php", account.base);
-          url.searchParams.set("username", account.username);
-          url.searchParams.set("password", account.password);
-          for (const [k, v] of Object.entries(params)) {
-            url.searchParams.set(k, v);
-          }
-          res = await fetch(url.toString());
-        } catch {
-          throw new FlowApiError("CONNECTION_FAILED");
-        }
-      } else {
-        throw new FlowApiError("CONNECTION_FAILED");
+      /* ignore */
+    }
+  }
+
+  // Se o proxy /api/public/xtream retornar 404, tenta a rota direta de função Netlify
+  if (!res || res.status === 404) {
+    try {
+      const netlifyFnRes = await fetch("/.netlify/functions/xtream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          base: account.base,
+          path: "player_api.php",
+          params: {
+            username: account.username,
+            password: account.password,
+            ...params,
+          },
+        }),
+      });
+      if (netlifyFnRes && netlifyFnRes.ok) {
+        res = netlifyFnRes;
       }
+    } catch {
+      /* ignore */
     }
   }
 
