@@ -107,6 +107,10 @@ export function normalizeBase(input: string): string {
   } else if (isHttpsPage && v.startsWith("http://")) {
     v = v.replace("http://", "https://");
   }
+  // Remove :80 se a URL for https:// (porta 80 é HTTP puro e causa ERR_SSL_PROTOCOL_ERROR em HTTPS)
+  if (v.startsWith("https://")) {
+    v = v.replace(/:80(?=\/|$)/, "");
+  }
   return v;
 }
 
@@ -114,9 +118,12 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
   let res: Response | null = null;
   const isNative = Capacitor.isNativePlatform();
   const isHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
-  const targetBase = isHttpsPage && account.base.startsWith("http://")
+  let targetBase = isHttpsPage && account.base.startsWith("http://")
     ? account.base.replace("http://", "https://")
     : account.base;
+  if (targetBase.startsWith("https://")) {
+    targetBase = targetBase.replace(/:80(?=\/|$)/, "");
+  }
 
   // 1. Chamada direta: se for nativo (Android) OU se o servidor for HTTPS (ex: zero1.shop)
   // Como o zero1.shop tem CORS liberado, baixar diretamente evita o limite de 6MB da Netlify Function (VOD tem 12MB!)
@@ -345,7 +352,8 @@ export async function authenticateWithDnsFallback(
     const norm = normalizeBase(b);
     if (!norm) continue;
     if (isHttpsPage && norm.startsWith("http://")) {
-      expandedBases.push(norm.replace("http://", "https://"));
+      const httpsVersion = norm.replace("http://", "https://").replace(/:80(?=\/|$)/, "");
+      expandedBases.push(httpsVersion);
     }
     expandedBases.push(norm);
   }

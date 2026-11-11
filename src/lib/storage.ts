@@ -29,8 +29,13 @@ export function loadAccount(): Account | null {
     const raw = localStorage.getItem(ACCOUNT_KEY);
     if (!raw) return null;
     const acc = JSON.parse(raw) as Account;
-    if (acc && acc.base && typeof window !== "undefined" && window.location.protocol === "https:" && acc.base.startsWith("http://")) {
-      acc.base = acc.base.replace("http://", "https://");
+    if (acc && acc.base && typeof window !== "undefined" && window.location.protocol === "https:") {
+      if (acc.base.startsWith("http://")) {
+        acc.base = acc.base.replace("http://", "https://");
+      }
+      if (acc.base.startsWith("https://")) {
+        acc.base = acc.base.replace(/:80(?=\/|$)/, "");
+      }
       try {
         localStorage.setItem(ACCOUNT_KEY, JSON.stringify(acc));
       } catch {}
