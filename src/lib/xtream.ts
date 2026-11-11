@@ -713,15 +713,19 @@ export function vodStreamUrl(a: Account, streamId: number, ext = "mp4", title = 
     if (streamId === 203) return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
   }
-  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
-  const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${cleanExt}`;
+  // No navegador web, IPTV Xtream responde muito mais rápido e suave via HLS (.m3u8),
+  // carregando segmentos pequenos em paralelo (sem travar como em arquivos MP4 gigantes de 2.5GB).
+  const isWeb = typeof window !== "undefined" && !Capacitor.isNativePlatform();
+  const format = isWeb ? "m3u8" : (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${format}`;
   return proxiedUrl(rawUrl);
 }
 export function seriesStreamUrl(a: Account, episodeId: string, ext = "mp4", title = ""): string {
   if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4";
   }
-  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
-  const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${cleanExt}`;
+  const isWeb = typeof window !== "undefined" && !Capacitor.isNativePlatform();
+  const format = isWeb ? "m3u8" : (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${format}`;
   return proxiedUrl(rawUrl);
 }
