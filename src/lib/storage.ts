@@ -27,7 +27,15 @@ export function loadAccount(): Account | null {
   if (!isBrowser) return null;
   try {
     const raw = localStorage.getItem(ACCOUNT_KEY);
-    return raw ? (JSON.parse(raw) as Account) : null;
+    if (!raw) return null;
+    const acc = JSON.parse(raw) as Account;
+    if (acc && acc.base && typeof window !== "undefined" && window.location.protocol === "https:" && acc.base.startsWith("http://")) {
+      acc.base = acc.base.replace("http://", "https://");
+      try {
+        localStorage.setItem(ACCOUNT_KEY, JSON.stringify(acc));
+      } catch {}
+    }
+    return acc;
   } catch {
     return null;
   }

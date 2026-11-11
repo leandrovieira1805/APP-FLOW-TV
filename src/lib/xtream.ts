@@ -101,41 +101,56 @@ export class FlowApiError extends Error {
 
 export function normalizeBase(input: string): string {
   let v = input.trim().replace(/\/+$/, "");
-  if (!/^https?:\/\//i.test(v)) v = "http://" + v;
+  const isHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
+  if (!/^https?:\/\//i.test(v)) {
+    v = (isHttpsPage ? "https://" : "http://") + v;
+  } else if (isHttpsPage && v.startsWith("http://")) {
+    v = v.replace("http://", "https://");
+  }
   return v;
 }
 
 async function apiCall<T>(account: Account, params: Record<string, string>): Promise<T> {
   let res: Response | null = null;
   const isNative = Capacitor.isNativePlatform();
+  const isHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
+  const targetBase = isHttpsPage && account.base.startsWith("http://")
+    ? account.base.replace("http://", "https://")
+    : account.base;
 
-  if (isNative) {
+  // 1. Chamada direta: se for nativo (Android) OU se o servidor for HTTPS (ex: zero1.shop)
+  // Como o zero1.shop tem CORS liberado, baixar diretamente evita o limite de 6MB da Netlify Function (VOD tem 12MB!)
+  if (isNative || targetBase.startsWith("https://")) {
     try {
-      const url = new URL("/player_api.php", account.base);
+      const url = new URL("/player_api.php", targetBase);
       url.searchParams.set("username", account.username);
       url.searchParams.set("password", account.password);
       for (const [k, v] of Object.entries(params)) {
         url.searchParams.set(k, v);
       }
-      res = await fetch(url.toString(), {
+      const directRes = await fetch(url.toString(), {
         method: "GET",
-        headers: {
+        headers: isNative ? {
           "User-Agent": "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)",
           "Accept": "*/*",
-        },
+        } : undefined,
       });
+      if (directRes && directRes.ok) {
+        res = directRes;
+      }
     } catch (e) {
-      console.warn("Direct native Xtream call failed, falling back to proxy:", e);
+      /* direct fetch failed (ex: CORS em outro provedor), tenta o proxy */
     }
   }
 
+  // 2. Se a chamada direta não funcionou ou se for HTTP em página HTTP, tenta o proxy Netlify
   if (!res) {
     try {
       res = await fetch("/api/public/xtream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          base: account.base,
+          base: targetBase,
           path: "player_api.php",
           params: {
             username: account.username,
@@ -149,14 +164,14 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
     }
   }
 
-  // Se o proxy /api/public/xtream retornar 404, tenta a rota direta de função Netlify
+  // 3. Se o proxy /api/public/xtream retornar 404, tenta a rota direta de função Netlify
   if (!res || res.status === 404) {
     try {
       const netlifyFnRes = await fetch("/.netlify/functions/xtream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          base: account.base,
+          base: targetBase,
           path: "player_api.php",
           params: {
             username: account.username,
@@ -173,18 +188,18 @@ async function apiCall<T>(account: Account, params: Record<string, string>): Pro
     }
   }
 
-  // Se o proxy retornar erro (ex: 404, 502), tenta chamada direta antes de falhar
+  // 4. Se o proxy retornar erro (ex: 502 por ultrapassar 6MB da Netlify nos catálogos de filmes), tenta direto com HTTPS
   if (!res || !res.ok) {
     if (!isNative) {
       try {
-        const url = new URL("/player_api.php", account.base);
+        const url = new URL("/player_api.php", targetBase);
         url.searchParams.set("username", account.username);
         url.searchParams.set("password", account.password);
         for (const [k, v] of Object.entries(params)) {
           url.searchParams.set(k, v);
         }
         const directRes = await fetch(url.toString());
-        if (directRes.ok) {
+        if (directRes && directRes.ok) {
           res = directRes;
         }
       } catch {
@@ -324,13 +339,17 @@ export async function authenticateWithDnsFallback(
     };
     return { account, info };
   }
-  const normalizedBases = Array.from(
-    new Set(
-      bases
-        .map(normalizeBase)
-        .filter(Boolean),
-    ),
-  );
+  const isHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
+  const expandedBases: string[] = [];
+  for (const b of bases) {
+    const norm = normalizeBase(b);
+    if (!norm) continue;
+    if (isHttpsPage && norm.startsWith("http://")) {
+      expandedBases.push(norm.replace("http://", "https://"));
+    }
+    expandedBases.push(norm);
+  }
+  const normalizedBases = Array.from(new Set(expandedBases));
 
   if (normalizedBases.length === 0) {
     throw new FlowApiError("DNS_UNAVAILABLE");
