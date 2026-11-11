@@ -45,15 +45,28 @@ function saveLocalHistory(list: WatchHistory[]) {
   try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list.slice(0, 40))); } catch {}
 }
 
+function getActiveUsername(): string {
+  if (typeof window === "undefined") return "default_user";
+  try {
+    const raw = localStorage.getItem("flowtv.account");
+    if (raw) {
+      const acc = JSON.parse(raw);
+      if (acc?.username) return String(acc.username).trim().toLowerCase();
+    }
+  } catch {}
+  return "default_user";
+}
+
 export function useFavorites() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const currentTokens = getAuthTokens();
   const currentUser = user || getCurrentUser();
+  const activeUsername = getActiveUsername();
   const useBackend = useSupabase || !!(currentUser || currentTokens?.accessToken);
 
   const { data: favorites = [], isLoading } = useQuery<Favorite[]>({
-    queryKey: ["favorites", currentUser?.id ?? "local"],
+    queryKey: ["favorites", activeUsername || currentUser?.id || "local"],
     queryFn: async () => {
       if (useBackend) {
         try {
@@ -155,10 +168,11 @@ export function useWatchHistory() {
   const queryClient = useQueryClient();
   const currentTokens = getAuthTokens();
   const currentUser = user || getCurrentUser();
-  const useBackend = !!(currentUser || currentTokens?.accessToken);
+  const activeUsername = getActiveUsername();
+  const useBackend = useSupabase || !!(currentUser || currentTokens?.accessToken);
 
   const { data: history = [], isLoading } = useQuery<WatchHistory[]>({
-    queryKey: ["watchHistory", currentUser?.id ?? "local"],
+    queryKey: ["watchHistory", activeUsername || currentUser?.id || "local"],
     queryFn: async () => {
       if (useBackend) {
         try {
