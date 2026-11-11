@@ -1,7 +1,9 @@
 // Netlify Function (v1 classic): /api/public/stream
-// Server-side media proxy for IPTV streams, HLS playlists (.m3u8), and posters.
+// Server-side media proxy for IPTV streams, HLS playlists (.m3u8), video chunks, and posters.
+// Proxies video directly via HTTPS using HTTP 206 Range chunks to avoid browser Mixed Content and CORS blocking.
 
 const PROXY_PATH = "/api/public/stream";
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunk per range request (stays well within Lambda 6MB limit)
 
 function isHttpUrl(u) {
   try {
@@ -43,14 +45,6 @@ function rewriteM3u8(playlist, baseUrl) {
   return out.join("\n");
 }
 
-const passHeaders = [
-  "content-type",
-  "content-length",
-  "content-range",
-  "accept-ranges",
-  "cache-control",
-];
-
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") {
     return {
@@ -58,7 +52,7 @@ export const handler = async (event) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": "Range, Content-Type",
+        "Access-Control-Allow-Headers": "Range, Content-Type, Authorization",
       },
       body: "",
     };
@@ -83,21 +77,40 @@ export const handler = async (event) => {
     /\.(avif|bmp|gif|jpe?g|png|svg|webp)(\?|$)/i.test(target);
 
   const upstreamHeaders = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "User-Agent": "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)",
     Accept: looksLikeImage
       ? "text/html,application/xhtml+xml,application/xml;q=0.9,image/*,*/*;q=0.8"
       : "*/*",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
     Referer: `${targetOrigin}/`,
   };
-  if (!looksLikeImage) upstreamHeaders.Origin = targetOrigin;
-  if (event.headers && event.headers.range)
-    upstreamHeaders["Range"] = event.headers.range;
+
+  const incomingRange = event.headers?.range || event.headers?.Range;
+
+  // Handle Range capping to stay under AWS Lambda 6MB response payload limit
+  let effectiveRange = incomingRange;
+  if (!looksLikeImage && incomingRange) {
+    const match = incomingRange.match(/bytes=(\d+)-(\d*)/);
+    if (match) {
+      const start = parseInt(match[1], 10);
+      const requestedEnd = match[2] ? parseInt(match[2], 10) : NaN;
+      if (isNaN(requestedEnd) || requestedEnd - start + 1 > CHUNK_SIZE) {
+        const cappedEnd = start + CHUNK_SIZE - 1;
+        effectiveRange = `bytes=${start}-${cappedEnd}`;
+      }
+    }
+  } else if (!looksLikeImage && !incomingRange && event.httpMethod === "GET") {
+    // If browser didn't supply range for video, request the first 2MB chunk
+    effectiveRange = `bytes=0-${CHUNK_SIZE - 1}`;
+  }
+
+  if (effectiveRange) {
+    upstreamHeaders["Range"] = effectiveRange;
+  }
 
   try {
     const controller = new AbortController();
-    const timeoutMs = looksLikeImage ? 10000 : 30000;
+    const timeoutMs = looksLikeImage ? 10000 : 25000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const upstream = await fetch(target, {
@@ -115,7 +128,11 @@ export const handler = async (event) => {
       contentType.includes("x-mpegurl") ||
       /\.m3u8($|\?)/i.test(finalUrl);
 
-    const headers = { "Access-Control-Allow-Origin": "*" };
+    const headers = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Range, Content-Type",
+      "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
+    };
 
     if (isPlaylist) {
       const text = await upstream.text();
@@ -125,14 +142,9 @@ export const handler = async (event) => {
       return { statusCode: upstream.status, headers, body: rewritten };
     }
 
-    for (const h of passHeaders) {
-      const v = upstream.headers.get(h);
-      if (v) headers[h] = v;
-    }
-    if (!headers["accept-ranges"]) headers["Accept-Ranges"] = "bytes";
-
     if (looksLikeImage) {
       const buf = Buffer.from(await upstream.arrayBuffer());
+      headers["Content-Type"] = upstream.headers.get("content-type") || "image/jpeg";
       headers["Cache-Control"] = "public, max-age=604800, immutable";
       return {
         statusCode: upstream.status,
@@ -142,14 +154,32 @@ export const handler = async (event) => {
       };
     }
 
-    // For video/binary, redirect to the upstream URL directly
+    if (event.httpMethod === "HEAD") {
+      headers["Content-Type"] = upstream.headers.get("content-type") || "video/mp4";
+      headers["Content-Length"] = upstream.headers.get("content-length") || "0";
+      headers["Accept-Ranges"] = "bytes";
+      return { statusCode: upstream.status, headers, body: "" };
+    }
+
+    // Video / audio / stream: proxy the chunk directly
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    headers["Content-Type"] = upstream.headers.get("content-type") || "video/mp4";
+    headers["Content-Length"] = String(buffer.length);
+    headers["Accept-Ranges"] = "bytes";
+    headers["Cache-Control"] = "no-store";
+
+    const contentRange = upstream.headers.get("content-range");
+    if (contentRange) {
+      headers["Content-Range"] = contentRange;
+    }
+
     return {
-      statusCode: 302,
-      headers: { Location: finalUrl, "Access-Control-Allow-Origin": "*" },
-      body: "",
+      statusCode: upstream.status === 200 && effectiveRange ? 206 : upstream.status,
+      headers,
+      isBase64Encoded: true,
+      body: buffer.toString("base64"),
     };
-  } catch {
-    return { statusCode: 502, body: "Upstream connection failed" };
+  } catch (err) {
+    return { statusCode: 502, body: "Upstream stream failed" };
   }
 };
-
