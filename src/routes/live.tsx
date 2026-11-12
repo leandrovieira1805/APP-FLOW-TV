@@ -426,31 +426,23 @@ function LivePage() {
                     onClick={() => {
                       const now = Date.now();
                       if (selected?.stream_id === c.stream_id) {
-                        // Allow entering fullscreen only if channel has been selected for at least 500ms
-                        if (now - lastSelectTime.current > 500) {
-                          playerRef.current?.requestFullscreen();
-                        }
+                        playerRef.current?.requestFullscreen();
                       } else {
                         setSelected(c);
                         setReinitCount((n) => n + 1);
                         lastSelectTime.current = now;
-                        playerRef.current?.requestFullscreen();
                       }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
+                        e.preventDefault();
                         const now = Date.now();
                         if (selected?.stream_id === c.stream_id) {
-                          if (now - lastSelectTime.current > 500) {
-                            e.preventDefault();
-                            playerRef.current?.requestFullscreen();
-                          }
+                          playerRef.current?.requestFullscreen();
                         } else {
-                          e.preventDefault(); // Prevent double action on TV WebView
                           setSelected(c);
                           setReinitCount((n) => n + 1);
                           lastSelectTime.current = now;
-                          playerRef.current?.requestFullscreen();
                         }
                       }
                     }}

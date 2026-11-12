@@ -29,6 +29,7 @@ export const Route = createFileRoute("/movie/$id")({
   validateSearch: (search: Record<string, string>) => ({
     from: search.from as string | undefined,
     brand: search.brand as string | undefined,
+    play: search.play as string | undefined,
   }),
   head: () => ({
     meta: [
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/movie/$id")({
 });
 
 function MoviePage() {
-  const { from, brand } = Route.useSearch() || {};
+  const { from, brand, play } = Route.useSearch() || {};
   const navigate = useNavigate();
 
   const handleBack = () => {
@@ -141,6 +142,13 @@ function MoviePage() {
     }
   }, [isFav, streamId, title, poster, removeFavorite, addFavorite]);
 
+  useEffect(() => {
+    if (play === "1" && data) {
+      setStartPosition(resume?.position || 0);
+      setPlaying(true);
+    }
+  }, [play, !!data, resume]);
+
   if (!ready || !account) {
     return (
       <div className="grid min-h-screen place-items-center bg-background">
@@ -154,13 +162,7 @@ function MoviePage() {
     return (
       <AppShell>
         {playing ? (
-          <div className="mx-auto max-w-5xl px-4 py-6 lg:px-12">
-            <button
-              onClick={() => setPlaying(false)}
-              className="focusable mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              <ArrowLeft className="h-4 w-4" /> Voltar
-            </button>
+          <div className="fixed inset-0 z-50 bg-black flex flex-col w-screen h-screen">
             <VideoPlayer
               source={{ url: vodStreamUrl(account, streamId, ext, title) }}
               title={title}

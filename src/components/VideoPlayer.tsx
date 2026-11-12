@@ -322,7 +322,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   }, [duration, knownDuration, probedDuration]);
 
   const [fullscreen, setFullscreen] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(!Capacitor.isNativePlatform());
+  const [controlsVisible, setControlsVisible] = useState(!Capacitor.isNativePlatform() || !!source.isLive);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -364,7 +364,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     currentUrlRef.current = finalUrl;
 
     // NATIVE APK EXO-PLAYER INTERCEPT
-    if (Capacitor.isNativePlatform()) {
+    // For VOD (Movies & Series), launch native ExoPlayer in fullscreen.
+    // For Live TV, run in WebView so it plays in the mini-player (small screen) and expands to fullscreen on request.
+    if (Capacitor.isNativePlatform() && !source.isLive) {
       let nativePlayerPlugin: any = null;
       let nativeListenerPlay: any = null;
       let nativeListenerPause: any = null;
@@ -853,11 +855,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNativePlatform ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
+  }, [isNativePlatform && !source.isLive ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
 
   // Auto-detect black screen (playing audio with 0 videoWidth/videoHeight on Web)
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
+    if (Capacitor.isNativePlatform() && !source.isLive) return;
     if (!playing) return;
 
     const timer = setTimeout(() => {
@@ -1147,6 +1149,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   // Lock orientation when mounted on mobile/native platform, restore on unmount
   useEffect(() => {
+    if (source.isLive) {
+      if (fullscreen) {
+        forceLandscape();
+      } else {
+        restoreOrientation();
+      }
+      return;
+    }
     if (effectiveLockLandscape || isMobile) {
       forceLandscape();
     }
@@ -1157,7 +1167,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         onPauseRef.current?.(video.currentTime, video.duration);
       }
     };
-  }, [effectiveLockLandscape, isMobile, forceLandscape, restoreOrientation]);
+  }, [effectiveLockLandscape, isMobile, source.isLive, fullscreen, forceLandscape, restoreOrientation]);
 
   // Sync full-screen styling class to body
   useEffect(() => {
@@ -1231,10 +1241,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     }
   }, [forceLandscape]);
 
-  // Auto-fullscreen on web / iOS Safari: when a video opens (movie/series), enter native
+  // Auto-fullscreen on web / iOS Safari / Capacitor: when a video opens (movie/series), enter native
   // fullscreen right away instead of playing inline.
   useEffect(() => {
-    if (Capacitor.isNativePlatform() || !autoFullscreen) return;
+    if (!autoFullscreen) return;
+
+    if (Capacitor.isNativePlatform()) {
+      setFullscreen(true);
+      forceLandscape();
+      return;
+    }
 
     const enterFs = () => {
       const v = videoRef.current;
@@ -1330,16 +1346,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   // Keep controls visible whenever video is paused (web player only — no APK)
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) return;
+    if (Capacitor.isNativePlatform() && !source.isLive) return;
     if (!playing) {
       setControlsVisible(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     }
-  }, [playing]);
+  }, [playing, source.isLive]);
 
   const togglePlay = useCallback(() => {
-    // No APK (player nativo), o play/pause Ã© controlado pelo overlay nativo.
-    if (Capacitor.isNativePlatform()) return;
+    // No APK (player nativo), o play/pause é controlado pelo overlay nativo.
+    if (Capacitor.isNativePlatform() && !source.isLive) return;
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => {});
@@ -1589,8 +1605,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         else showControls();
       }}
     >
-      {/* Apenas renderiza <video> no site (nÃ£o APK). No APK, o vÃ­deo sai pelo player nativo overlay. */}
-      {!Capacitor.isNativePlatform() && (
+      {/* Renderiza <video> no site e no APK para transmissões ao vivo (mini-player/tela cheia) */}
+      {(!Capacitor.isNativePlatform() || source.isLive) && (
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
@@ -1631,8 +1647,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         </div>
       )}
 
-      {/* Center play button — web only. No APK o vídeo sai pelo player nativo overlay. */}
-      {!Capacitor.isNativePlatform() && !playing && !loading && !error && (
+      {/* Center play button */}
+      {(!Capacitor.isNativePlatform() || source.isLive) && !playing && !loading && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1647,8 +1663,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         </button>
       )}
 
-      {/* Title bar with Back Button — web only. No APK o nativo tem seus próprios controles. */}
-      {!Capacitor.isNativePlatform() && (
+      {/* Title bar with Back Button */}
+      {(!Capacitor.isNativePlatform() || source.isLive) && (
         <div
           className={`absolute inset-x-0 top-0 z-20 flex items-center gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent p-4 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
@@ -1677,8 +1693,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         </div>
       )}
 
-      {/* Controls bar — web only. No APK o nativo tem seus próprios controles. */}
-      {!Capacitor.isNativePlatform() && (
+      {/* Controls bar */}
+      {(!Capacitor.isNativePlatform() || source.isLive) && (
         <div
           className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-3 pb-3 pt-10 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"

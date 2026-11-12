@@ -38,6 +38,7 @@ export const Route = createFileRoute("/series/$id")({
   validateSearch: (search: Record<string, string>) => ({
     from: search.from as string | undefined,
     brand: search.brand as string | undefined,
+    play: search.play as string | undefined,
   }),
   head: () => ({
     meta: [
@@ -53,7 +54,7 @@ interface FlatEpisode extends SeriesEpisode {
 }
 
 function SeriesDetailPage() {
-  const { from, brand } = Route.useSearch() || {};
+  const { from, brand, play } = Route.useSearch() || {};
   const navigate = useNavigate();
   
   const handleBack = () => {
@@ -211,6 +212,12 @@ function SeriesDetailPage() {
   const resumeEpisode = resume?.episodeId
     ? flatEpisodes.find((e) => e.id === resume.episodeId)
     : flatEpisodes[0];
+
+  useEffect(() => {
+    if (play === "1" && resumeEpisode && !current) {
+      setCurrent(resumeEpisode);
+    }
+  }, [play, resumeEpisode, current]);
 
   // If user came from standard site (no activeBrand), render standard FLOW TV AppShell layout
   if (!activeBrand) {

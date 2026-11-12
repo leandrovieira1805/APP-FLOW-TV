@@ -329,7 +329,7 @@ function StreamingBrandHub() {
                         <div className="flex items-center gap-2.5 sm:gap-3 mt-3 sm:mt-0">
                           <Link
                             to={targetLink}
-                            search={{ from: "/hub/" + brand.id, brand: brand.name }}
+                            search={{ from: "/hub/" + brand.id, brand: brand.name, play: "1" }}
                             className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-5 sm:px-8 py-2.5 sm:py-3 font-bold text-black shadow-xl transition-all active:scale-95 hover:bg-white/90 text-xs sm:text-base flex-1 sm:flex-initial"
                           >
                             <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-black" />
