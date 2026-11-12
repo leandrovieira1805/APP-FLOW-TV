@@ -213,6 +213,13 @@ function SeriesDetailPage() {
     ? flatEpisodes.find((e) => e.id === resume.episodeId)
     : flatEpisodes[0];
 
+  const playlistIndex = current
+    ? flatEpisodes.findIndex(
+        (e) => String(e.id) === String(current.id) && e.seasonNum === current.seasonNum
+      )
+    : -1;
+  const safePlaylistStartIndex = playlistIndex >= 0 ? playlistIndex : 0;
+
   useEffect(() => {
     if (play === "1" && resumeEpisode && !current) {
       setCurrent(resumeEpisode);
