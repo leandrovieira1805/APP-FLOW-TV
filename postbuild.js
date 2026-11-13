@@ -21,7 +21,18 @@ if (existsSync(serverPath)) {
   }
 }
 
-// Generate dist/client/index.html for Capacitor local mobile build entry point
+try {
+  const srcFunctions = join(__dirname, "functions");
+  const destFunctions = join(__dirname, "dist", "client", "functions");
+  if (existsSync(srcFunctions)) {
+    import("node:fs").then(fs => {
+      fs.cpSync(srcFunctions, destFunctions, { recursive: true, force: true });
+      console.log("[postbuild] Copied functions/ to dist/client/functions/");
+    }).catch(() => {});
+  }
+} catch (e) {
+  console.error("[postbuild] Failed to copy functions:", e);
+}
 try {
   if (existsSync(assetsDir)) {
     const files = readdirSync(assetsDir);
