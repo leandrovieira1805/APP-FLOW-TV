@@ -679,15 +679,21 @@ export function imageCandidates(url?: string): string[] {
   if (!url) return [];
   const u = url.trim();
   if (!u) return [];
-  if (u.startsWith("data:") || u.startsWith("blob:") || u.startsWith("/api/public/stream")) return [u];
-  // Only proxy HTTP images (mixed content issue)
-  if (/^https:\/\//i.test(u)) return [u]; // HTTPS images don't need proxy
-  if (/^http:\/\//i.test(u)) return [`/api/public/stream?url=${encodeURIComponent(u)}&kind=image`];
+  if (u.startsWith("data:") || u.startsWith("blob:")) return [u];
+  // No navegador web ou APK: imagens em HTTPS ou HTTP são carregadas direto
+  // Se for HTTP em página HTTPS, converte para https se for tmdb ou carrega direto
+  if (u.startsWith("http://image.tmdb.org")) {
+    return [u.replace("http://image.tmdb.org", "https://image.tmdb.org")];
+  }
   return [u];
 }
 
 function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
   if (typeof window === "undefined" || Capacitor.isNativePlatform()) {
+    return absoluteUrl;
+  }
+  // Se o servidor Xtream for HTTPS (ex: zero1.shop), reproduz direto sem proxy!
+  if (absoluteUrl.startsWith("https://")) {
     return absoluteUrl;
   }
   if (forceTranscode) {
