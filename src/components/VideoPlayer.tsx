@@ -184,7 +184,7 @@ function safeExitFullscreen() {
   try {
     if (typeof document !== "undefined" && document.fullscreenElement) {
       if (typeof document.exitFullscreen === "function") {
-        safeExitFullscreen();
+        document.exitFullscreen().catch(() => {});
       } else if (typeof (document as any).webkitExitFullscreen === "function") {
         (document as any).webkitExitFullscreen();
       } else if (typeof (document as any).mozCancelFullScreen === "function") {
@@ -364,9 +364,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     currentUrlRef.current = finalUrl;
 
     // NATIVE APK EXO-PLAYER INTERCEPT
-    // For VOD (Movies & Series), launch native ExoPlayer in fullscreen.
-    // For Live TV, run in WebView so it plays in the mini-player (small screen) and expands to fullscreen on request.
-    if (Capacitor.isNativePlatform() && !source.isLive) {
+    // Launch native ExoPlayer in fullscreen for ALL content (VOD + Live TV).
+    // On Android, ExoPlayer only supports fullscreen mode. First tap on a channel
+    // starts playback in the native fullscreen player; second tap (same channel)
+    // is handled by the parent page (live.tsx) to re-request fullscreen.
+    if (Capacitor.isNativePlatform()) {
       let nativePlayerPlugin: any = null;
       let nativeListenerPlay: any = null;
       let nativeListenerPause: any = null;
@@ -792,16 +794,36 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             setReconnecting(false);
           });
         } else if (video!.canPlayType("application/vnd.apple.mpegurl") || video!.canPlayType("application/x-mpegurl")) {
-          // Native HLS (Safari/iOS)
+          // Native HLS (Safari/iOS) — force native AVPlayer on iOS
           video!.src = finalUrl;
+
+          // iOS Safari: force native AVPlayer fullscreen as soon as video is ready
+          const enterIOSNative = () => {
+            if (isIOS && typeof (video as any).webkitEnterFullscreen === "function") {
+              try {
+                (video as any).webkitEnterFullscreen();
+              } catch (e) {
+                console.warn("iOS webkitEnterFullscreen failed:", e);
+              }
+            }
+          };
+
           const onNativeMeta = () => {
             setLoading(false);
             seekToStart();
             if (autoPlay) {
-              video!.play().catch((err) => {
-                console.warn("iOS Autoplay blocked:", err);
-                setPlaying(false);
-              });
+              const playPromise = video!.play();
+              if (playPromise && playPromise.then) {
+                playPromise.then(() => {
+                  // iOS only allows webkitEnterFullscreen after play() resolves
+                  enterIOSNative();
+                }).catch((err) => {
+                  console.warn("iOS Autoplay blocked:", err);
+                  setPlaying(false);
+                });
+              } else {
+                enterIOSNative();
+              }
             }
           };
 
@@ -855,11 +877,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNativePlatform && !source.isLive ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
+  }, [isNativePlatform ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
 
   // Auto-detect black screen (playing audio with 0 videoWidth/videoHeight on Web)
   useEffect(() => {
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    if (Capacitor.isNativePlatform()) return;
     if (!playing) return;
 
     const timer = setTimeout(() => {
@@ -1346,7 +1368,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   // Keep controls visible whenever video is paused (web player only — no APK)
   useEffect(() => {
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    if (Capacitor.isNativePlatform()) return;
     if (!playing) {
       setControlsVisible(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -1355,7 +1377,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   const togglePlay = useCallback(() => {
     // No APK (player nativo), o play/pause é controlado pelo overlay nativo.
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    if (Capacitor.isNativePlatform()) return;
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => {});
