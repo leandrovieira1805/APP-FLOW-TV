@@ -1401,8 +1401,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     if (Capacitor.isNativePlatform()) return;
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    else v.pause();
+    if (v.paused) {
+      const p = v.play();
+      if (p && p.then) {
+        p.then(() => {
+          if (isIOS && typeof (v as any).webkitEnterFullscreen === "function") {
+            try { (v as any).webkitEnterFullscreen(); } catch (e) {}
+          }
+        }).catch(() => {});
+      } else if (isIOS && typeof (v as any).webkitEnterFullscreen === "function") {
+        try { (v as any).webkitEnterFullscreen(); } catch (e) {}
+      }
+    } else {
+      v.pause();
+    }
   }, []);
 
   const toggleMute = useCallback(() => {
