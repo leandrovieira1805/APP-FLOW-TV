@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'FLOW TV',
   webDir: 'dist/client',
   server: {
-    androidScheme: 'https',
+    androidScheme: 'http',
     cleartext: true
   },
   plugins: {

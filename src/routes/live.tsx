@@ -293,7 +293,6 @@ function LivePage() {
             }}
             onExitFullscreen={() => setShowChannels(true)}
             forceReinit={reinitCount}
-            lockLandscape
           />
               <div className={`mt-3 flex items-center gap-2 ${isMobile ? "flex" : "hidden"}`}>
                 <button

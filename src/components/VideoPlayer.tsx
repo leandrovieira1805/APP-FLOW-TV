@@ -1274,13 +1274,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     };
   }, [controlsVisible, menu, onExitFullscreen, fullscreen, source.isLive, restoreOrientation]);
 
-  // Auto-fullscreen on mount only for native Capacitor apps (APKs)
+  // Auto-fullscreen on mount only for native Capacitor apps (APKs) for VOD
   useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
+    if (Capacitor.isNativePlatform() && !source.isLive) {
       setFullscreen(true);
       forceLandscape();
     }
-  }, [forceLandscape]);
+  }, [forceLandscape, source.isLive]);
 
   // Auto-fullscreen on web / iOS Safari / Capacitor: when a video opens (movie/series), enter native
   // fullscreen right away instead of playing inline.
@@ -1654,10 +1654,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       }}
       onClick={() => {
         isRemoteMode.current = false;
-        if (!fullscreen && source.isLive && isMobile) {
-          toggleFullscreen();
-          return;
-        }
         if (menu) setMenu(null);
         else showControls();
       }}
