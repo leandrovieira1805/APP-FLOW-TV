@@ -121,7 +121,7 @@ export default {
       });
 
       const rangeHeader = request.headers.get("Range");
-      if (rangeHeader && !looksLikeImage && !isHls) {
+      if (rangeHeader && !looksLikeImage) {
         upstreamHeaders.set("Range", rangeHeader);
       }
 
