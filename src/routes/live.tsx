@@ -424,25 +424,17 @@ function LivePage() {
                   <button
                     onClick={() => {
                       const now = Date.now();
-                      if (selected?.stream_id === c.stream_id) {
-                        playerRef.current?.requestFullscreen();
-                      } else {
-                        setSelected(c);
-                        setReinitCount((n) => n + 1);
-                        lastSelectTime.current = now;
-                      }
+                      setSelected(c);
+                      setReinitCount((n) => n + 1);
+                      lastSelectTime.current = now;
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         const now = Date.now();
-                        if (selected?.stream_id === c.stream_id) {
-                          playerRef.current?.requestFullscreen();
-                        } else {
-                          setSelected(c);
-                          setReinitCount((n) => n + 1);
-                          lastSelectTime.current = now;
-                        }
+                        setSelected(c);
+                        setReinitCount((n) => n + 1);
+                        lastSelectTime.current = now;
                       }
                     }}
                     className={`focusable flex w-full items-center gap-3 rounded-lg border p-2 text-left transition-colors ${

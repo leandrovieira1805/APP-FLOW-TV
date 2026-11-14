@@ -364,9 +364,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     currentUrlRef.current = finalUrl;
 
     // NATIVE APK EXO-PLAYER INTERCEPT
-    // For VOD (Movies & Series), launch native ExoPlayer in fullscreen.
-    // For Live TV, run in WebView so it plays in the mini-player (small screen) and expands to fullscreen on request.
-    if (Capacitor.isNativePlatform() && !source.isLive) {
+    // Always launch native ExoPlayer for all media on the APK (Live TV and VOD).
+    if (Capacitor.isNativePlatform()) {
       let nativePlayerPlugin: any = null;
       let nativeListenerPlay: any = null;
       let nativeListenerPause: any = null;
@@ -474,6 +473,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             "jeepCapVideoPlayerExit",
             (data: any) => {
               setPlaying(false);
+              isNativeActiveRef.current = false;
+              activeNativeUrlRef.current = "";
               const pos = data?.currentTime ?? data?.value ?? lastKnownTime;
               const dur = data?.duration ?? lastKnownDuration;
               if (onPauseRef.current) {
@@ -892,11 +893,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNativePlatform && !source.isLive ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
+  }, [isNativePlatform ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
 
   // Auto-detect black screen (playing audio with 0 videoWidth/videoHeight on Web)
   useEffect(() => {
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    if (Capacitor.isNativePlatform()) return;
     if (!playing) return;
 
     const timer = setTimeout(() => {
@@ -1387,7 +1388,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   // Keep controls visible whenever video is paused (web player only — no APK)
   useEffect(() => {
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    if (Capacitor.isNativePlatform()) return;
     if (!playing) {
       setControlsVisible(true);
       if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -1395,8 +1396,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   }, [playing, source.isLive]);
 
   const togglePlay = useCallback(() => {
-    // No APK (player nativo), o play/pause é controlado pelo overlay nativo para VOD.
-    if (Capacitor.isNativePlatform() && !source.isLive) return;
+    // No APK (player nativo), o play/pause é controlado pelo overlay nativo.
+    if (Capacitor.isNativePlatform()) return;
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
@@ -1658,8 +1659,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         else showControls();
       }}
     >
-      {/* Renderiza <video> no site e no APK para transmissões ao vivo (mini-player/tela cheia) */}
-      {(!Capacitor.isNativePlatform() || source.isLive) && (
+      {/* Renderiza <video> apenas na Web. No APK nativo Android, o ExoPlayer gerencia a reprodução */}
+      {!Capacitor.isNativePlatform() && (
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
@@ -1701,7 +1702,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Center play button */}
-      {(!Capacitor.isNativePlatform() || source.isLive) && !playing && !loading && !error && (
+      {!Capacitor.isNativePlatform() && !playing && !loading && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1717,7 +1718,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Title bar with Back Button */}
-      {(!Capacitor.isNativePlatform() || source.isLive) && (
+      {!Capacitor.isNativePlatform() && (
         <div
           className={`absolute inset-x-0 top-0 z-20 flex items-center gap-3 bg-gradient-to-b from-black/85 via-black/40 to-transparent p-4 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
@@ -1747,7 +1748,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Controls bar */}
-      {(!Capacitor.isNativePlatform() || source.isLive) && (
+      {!Capacitor.isNativePlatform() && (
         <div
           className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-3 pb-3 pt-10 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
