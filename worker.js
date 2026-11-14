@@ -132,7 +132,12 @@ export default {
           redirect: "follow",
         });
 
-        if (isHls && upstream.ok) {
+        // Se o upstream for um MP4 ou mídia direta (mesmo que a URL termine em .m3u8 por redirect 302),
+        // só faz rewrite de HLS se o content-type for realmente uma playlist de texto/m3u8!
+        const contentType = upstream.headers.get("Content-Type") || "";
+        const isRealHls = isHls && (contentType.includes("mpegurl") || contentType.includes("application/x-mpegURL") || contentType.includes("text/"));
+
+        if (isRealHls && upstream.ok) {
           const playlistText = await upstream.text();
           const lines = playlistText.split(/\r?\n/);
           const rewritten = lines.map((line) => {
