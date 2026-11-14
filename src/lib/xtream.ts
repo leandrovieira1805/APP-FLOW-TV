@@ -692,13 +692,11 @@ function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
   if (typeof window === "undefined" || Capacitor.isNativePlatform()) {
     return absoluteUrl;
   }
-  // Se o servidor Xtream for HTTPS (ex: zero1.shop), reproduz direto sem proxy!
-  if (absoluteUrl.startsWith("https://")) {
-    return absoluteUrl;
-  }
   if (forceTranscode) {
     return `/api/public/transcode.m3u8?url=${encodeURIComponent(absoluteUrl)}`;
   }
+  // No navegador web em HTTPS: se a URL do stream for HTTP, o navegador bloqueia (Mixed Content).
+  // Sempre encaminha streams HTTP pelo proxy seguro /api/public/stream do Cloudflare Worker.
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
   const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
   const ext = isHls ? "&ext=.m3u8" : "";
