@@ -841,14 +841,31 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       } else {
         // Native playback (MP4, MKV, etc)
         video!.src = finalUrl;
+        const enterIOSNative = () => {
+          if (isIOS && typeof (video as any).webkitEnterFullscreen === "function") {
+            try {
+              (video as any).webkitEnterFullscreen();
+            } catch (e) {
+              console.warn("iOS webkitEnterFullscreen failed:", e);
+            }
+          }
+        };
+
         const onNativeMeta = () => {
           setLoading(false);
           seekToStart();
           if (autoPlay) {
-            video!.play().catch((err) => {
-              console.warn("Autoplay blocked:", err);
-              setPlaying(false);
-            });
+            const playPromise = video!.play();
+            if (playPromise && playPromise.then) {
+              playPromise.then(() => {
+                enterIOSNative();
+              }).catch((err) => {
+                console.warn("Autoplay blocked:", err);
+                setPlaying(false);
+              });
+            } else {
+              enterIOSNative();
+            }
           }
         };
 
@@ -953,11 +970,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       if (onPauseRef.current && video.duration) onPauseRef.current(video.currentTime, video.duration);
     };
     const handleWaiting = () => setLoading(true);
+    const handleCanPlay = () => setLoading(false);
     const handlePlaying = () => {
       setLoading(false);
       setReconnecting(false);
     };
     const handleTimeUpdate = () => {
+      if (video.currentTime > 0) setLoading(false);
       setCurrent(video.currentTime);
       const totalDur = effectiveDurationRef.current || (knownDuration && Number.isFinite(knownDuration) && knownDuration > 0 ? knownDuration : (video.duration || 0));
       if (onProgressRef.current && totalDur > 0) onProgressRef.current(video.currentTime, totalDur);
@@ -1124,6 +1143,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     video.addEventListener("play", handlePlay);
     video.addEventListener("pause", handlePause);
     video.addEventListener("waiting", handleWaiting);
+    video.addEventListener("canplay", handleCanPlay);
     video.addEventListener("playing", handlePlaying);
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("durationchange", handleDurationChange);
@@ -1134,6 +1154,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       video.removeEventListener("play", handlePlay);
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("waiting", handleWaiting);
+      video.removeEventListener("canplay", handleCanPlay);
       video.removeEventListener("playing", handlePlaying);
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("durationchange", handleDurationChange);

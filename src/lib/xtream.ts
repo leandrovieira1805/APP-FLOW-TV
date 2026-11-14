@@ -680,10 +680,16 @@ export function imageCandidates(url?: string): string[] {
   const u = url.trim();
   if (!u) return [];
   if (u.startsWith("data:") || u.startsWith("blob:")) return [u];
-  // No navegador web ou APK: imagens em HTTPS ou HTTP são carregadas direto
-  // Se for HTTP em página HTTPS, converte para https se for tmdb ou carrega direto
   if (u.startsWith("http://image.tmdb.org")) {
     return [u.replace("http://image.tmdb.org", "https://image.tmdb.org")];
+  }
+  if (u.startsWith("https://")) {
+    return [u];
+  }
+  // No navegador web sob HTTPS: imagens HTTP de servidores IPTV são bloqueadas por Mixed Content.
+  // Encaminha pelo proxy do Cloudflare Worker com cache.
+  if (typeof window !== "undefined" && !Capacitor.isNativePlatform() && u.startsWith("http://")) {
+    return [`/api/public/stream?kind=image&url=${encodeURIComponent(u)}`, u];
   }
   return [u];
 }
@@ -717,19 +723,15 @@ export function vodStreamUrl(a: Account, streamId: number, ext = "mp4", title = 
     if (streamId === 203) return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
   }
-  // No navegador web, IPTV Xtream responde muito mais rápido e suave via HLS (.m3u8),
-  // carregando segmentos pequenos em paralelo (sem travar como em arquivos MP4 gigantes de 2.5GB).
-  const isWeb = typeof window !== "undefined" && !Capacitor.isNativePlatform();
-  const format = isWeb ? "m3u8" : (ext || "mp4").toLowerCase().replace(/^\./, "");
-  const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${format}`;
+  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${cleanExt}`;
   return proxiedUrl(rawUrl);
 }
 export function seriesStreamUrl(a: Account, episodeId: string, ext = "mp4", title = ""): string {
   if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4";
   }
-  const isWeb = typeof window !== "undefined" && !Capacitor.isNativePlatform();
-  const format = isWeb ? "m3u8" : (ext || "mp4").toLowerCase().replace(/^\./, "");
-  const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${format}`;
+  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${cleanExt}`;
   return proxiedUrl(rawUrl);
 }
