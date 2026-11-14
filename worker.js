@@ -1,10 +1,10 @@
 // Cloudflare Worker: Entry point for FLOW TV
-// Handles /api/public/xtream, /api/public/stream, and static assets from dist/client
+// Handles /api/public/xtream, /api/public/stream, client-error, backend proxying, and static assets from dist/client
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS, HEAD",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Range",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS, HEAD, PUT, PATCH, DELETE",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Range, X-Requested-With",
   "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
 };
 
@@ -16,7 +16,15 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    // Proxy para /api/public/xtream
+    // 1. Rota de log de erro de cliente (/api/public/client-error)
+    if (url.pathname === "/api/public/client-error") {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    // 2. Proxy para /api/public/xtream (Chamadas da API Xtream Codes para evitar CORS)
     if (url.pathname === "/api/public/xtream") {
       let body;
       try {
@@ -95,7 +103,7 @@ export default {
       }
     }
 
-    // Proxy para /api/public/stream
+    // 3. Proxy de Streaming e Mídia (/api/public/stream e /api/public/stream.m3u8)
     if (url.pathname.startsWith("/api/public/stream")) {
       const target = url.searchParams.get("url");
       if (!target) {
@@ -127,18 +135,23 @@ export default {
 
       try {
         const upstream = await fetch(target, {
-          method: request.method,
+          method: request.method === "HEAD" ? "HEAD" : "GET",
           headers: upstreamHeaders,
           redirect: "follow",
         });
 
-        // Se o upstream for um MP4 ou mídia direta (mesmo que a URL termine em .m3u8 por redirect 302),
-        // só faz rewrite de HLS se o content-type for realmente uma playlist de texto/m3u8!
-        const contentType = upstream.headers.get("Content-Type") || "";
-        const isRealHls = isHls && (contentType.includes("mpegurl") || contentType.includes("application/x-mpegURL") || contentType.includes("text/"));
+        const contentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
+        const isRealHls = isHls && (
+          contentType.includes("mpegurl") ||
+          contentType.includes("x-mpegurl") ||
+          contentType.includes("text/") ||
+          (!contentType.includes("video/") && !contentType.includes("octet-stream") && !contentType.includes("binary/"))
+        );
 
+        // Se for playlist HLS de verdade (.m3u8), reescreve as rotas para o proxy HTTPS
         if (isRealHls && upstream.ok) {
           const playlistText = await upstream.text();
+          const baseUrl = upstream.url || target;
           const lines = playlistText.split(/\r?\n/);
           const rewritten = lines.map((line) => {
             const trimmed = line.trim();
@@ -146,7 +159,7 @@ export default {
             if (trimmed.startsWith("#")) {
               return line.replace(/URI="([^"]+)"/g, (_m, uri) => {
                 try {
-                  const abs = new URL(uri, target).toString();
+                  const abs = new URL(uri, baseUrl).toString();
                   return `URI="/api/public/stream?url=${encodeURIComponent(abs)}"`;
                 } catch {
                   return _m;
@@ -154,7 +167,7 @@ export default {
               });
             }
             try {
-              const abs = new URL(trimmed, target).toString();
+              const abs = new URL(trimmed, baseUrl).toString();
               return `/api/public/stream?url=${encodeURIComponent(abs)}`;
             } catch {
               return line;
@@ -166,20 +179,106 @@ export default {
             resHeaders.set(k, v);
           }
           resHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
+          resHeaders.set("Cache-Control", "no-store");
           return new Response(rewritten, { status: 200, headers: resHeaders });
         }
 
-        const resHeaders = new Headers(upstream.headers);
+        // Para mídia binária (MP4, TS, MKV, imagens, etc.): Streaming contínuo preservando headers de Range
+        const passHeaders = [
+          "content-type",
+          "content-length",
+          "content-range",
+          "accept-ranges",
+          "cache-control",
+          "etag",
+          "last-modified",
+          "content-disposition",
+        ];
+
+        const resHeaders = new Headers();
         for (const [k, v] of Object.entries(corsHeaders)) {
           resHeaders.set(k, v);
         }
+        for (const h of passHeaders) {
+          const v = upstream.headers.get(h);
+          if (v) resHeaders.set(h, v);
+        }
+        if (!resHeaders.has("Accept-Ranges")) {
+          resHeaders.set("Accept-Ranges", "bytes");
+        }
+        if (looksLikeImage) {
+          resHeaders.set("Cache-Control", "public, max-age=604800, immutable");
+        }
+
         return new Response(upstream.body, { status: upstream.status, headers: resHeaders });
       } catch (err) {
         return new Response(`Proxy error: ${err.message}`, { status: 502, headers: corsHeaders });
       }
     }
 
-    // Para qualquer outra rota: entrega arquivos estáticos (Assets) com fallback SPA (index.html)
+    // 4. Rota transcode.m3u8 (requer servidor Express backend com ffmpeg)
+    if (url.pathname.startsWith("/api/public/transcode")) {
+      if (env.API_ORIGIN) {
+        const backendUrl = new URL(url.pathname + url.search, env.API_ORIGIN);
+        return fetch(new Request(backendUrl, request));
+      }
+      return new Response(
+        JSON.stringify({
+          error: "TRANSCODE_SERVICE_UNAVAILABLE",
+          message: "O serviço de transcodificação em tempo real requer backend dedicado com FFmpeg. Configure API_ORIGIN nas variáveis de ambiente.",
+        }),
+        { status: 503, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // 5. Encaminhamento de rotas de API do backend (/api/*)
+    if (url.pathname.startsWith("/api/")) {
+      // Se houver um backend Express hospedado configurado via API_ORIGIN:
+      if (env.API_ORIGIN) {
+        try {
+          const backendUrl = new URL(url.pathname + url.search, env.API_ORIGIN);
+          const fwdHeaders = new Headers(request.headers);
+          fwdHeaders.set("X-Forwarded-Host", url.host);
+          fwdHeaders.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+
+          const backendReq = new Request(backendUrl.toString(), {
+            method: request.method,
+            headers: fwdHeaders,
+            body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+            redirect: "follow",
+          });
+
+          const backendRes = await fetch(backendReq);
+          const resHeaders = new Headers(backendRes.headers);
+          for (const [k, v] of Object.entries(corsHeaders)) {
+            resHeaders.set(k, v);
+          }
+          return new Response(backendRes.body, {
+            status: backendRes.status,
+            headers: resHeaders,
+          });
+        } catch (e) {
+          return new Response(
+            JSON.stringify({ error: "BACKEND_UNREACHABLE", message: `Falha ao conectar ao backend: ${e.message}` }),
+            { status: 502, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+      }
+
+      // Se não houver backend hospedado configurado:
+      // O app FLOW TV usa Supabase e Xtream Codes diretamente no frontend para login e catálogo.
+      // Retorna 404 JSON estruturado com instrução clara em vez de 500 ou HTML SPA.
+      return new Response(
+        JSON.stringify({
+          error: "BACKEND_NOT_CONFIGURED",
+          message: "Nenhum backend Express configurado em API_ORIGIN. A sincronização em nuvem é executada via Supabase.",
+          path: url.pathname,
+        }),
+        { status: 404, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // 6. Entrega de arquivos estáticos da SPA (Assets) com fallback index.html para TanStack Router
     if (env.ASSETS) {
       const response = await env.ASSETS.fetch(request);
       if (response.status === 404 && !url.pathname.includes(".")) {
