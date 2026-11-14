@@ -1,9 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "app-flow-tv",
+  "main": "worker.js",
   "compatibility_date": "2024-11-01",
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "pages_build_output_dir": "dist/client"
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS"
+  }
 }
