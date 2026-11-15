@@ -1,6 +1,8 @@
 package com.flowtv.player
 
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.webkit.WebSettings
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
@@ -11,6 +13,10 @@ class MainActivity : BridgeActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 
     override fun onStart() {

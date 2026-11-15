@@ -149,6 +149,18 @@ function SeriesDetailPage() {
     }
   };
 
+  const handlePrev = () => {
+    if (!current) return;
+    const idx = flatEpisodes.findIndex(
+      (e) => e.id === current.id && e.seasonNum === current.seasonNum
+    );
+    if (idx > 0) {
+      const prev = flatEpisodes[idx - 1];
+      setCurrent(prev);
+      toast.success(`Anterior: ${prev.title}`);
+    }
+  };
+
   const handleProgress = useCallback(
     (pos: number, dur: number) => {
       if (!current) return;
@@ -251,6 +263,8 @@ function SeriesDetailPage() {
               onEnded={handleNext}
               onNext={handleNext}
               nextLabel="Próximo episódio"
+              onPrev={handlePrev}
+              prevLabel="Episódio anterior"
               playlist={flatEpisodes.length > 1 ? flatEpisodes.map((ep) => ({
                 url: seriesStreamUrl(account, ep.id, ep.container_extension || "mp4", `${title} - T${ep.seasonNum}E${ep.episode_num}`),
                 title: `T${ep.seasonNum}:E${ep.episode_num} ${ep.title}`,
@@ -458,6 +472,8 @@ function SeriesDetailPage() {
             onEnded={handleNext}
             onNext={handleNext}
             nextLabel="Próximo episódio"
+            onPrev={handlePrev}
+            prevLabel="Episódio anterior"
             playlist={flatEpisodes.length > 1 ? flatEpisodes.map((ep) => ({
               url: seriesStreamUrl(account, ep.id, ep.container_extension || "mp4", `${title} - T${ep.seasonNum}E${ep.episode_num}`),
               title: `T${ep.seasonNum}:E${ep.episode_num} ${ep.title}`,

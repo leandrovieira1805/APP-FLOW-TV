@@ -380,6 +380,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       let nativeListenerEnded: any = null;
       let nativeListenerExit: any = null;
       let nativeListenerIndex: any = null;
+      let nativeListenerPrev: any = null;
+      let nativeListenerNext: any = null;
       let pollTimer: any = null;
 
       const playNative = async () => {
@@ -514,6 +516,24 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             }
           );
 
+          nativeListenerPrev = await (CapacitorVideoPlayer as any).addListener(
+            "jeepCapVideoPlayerPrev",
+            () => {
+              if (onPrevRef.current) {
+                onPrevRef.current();
+              }
+            }
+          );
+
+          nativeListenerNext = await (CapacitorVideoPlayer as any).addListener(
+            "jeepCapVideoPlayerNext",
+            () => {
+              if (onNextRef.current) {
+                onNextRef.current();
+              }
+            }
+          );
+
           const nativePlaylist =
             playlist && playlist.length > 1
               ? playlist.map((it) => ({
@@ -622,6 +642,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           nativeListenerEnded?.remove?.();
           nativeListenerExit?.remove?.();
           nativeListenerIndex?.remove?.();
+          nativeListenerPrev?.remove?.();
+          nativeListenerNext?.remove?.();
           nativePlayerPlugin?.stopAllPlayers?.().catch(() => {});
         } catch {}
       };
