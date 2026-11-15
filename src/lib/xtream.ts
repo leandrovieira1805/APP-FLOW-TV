@@ -667,12 +667,13 @@ function normalizeSeriesInfo(data: SeriesInfo, base: string): SeriesInfo {
 // Cover/poster images from Xtream panels are usually plain HTTP. The app runs
 // on HTTPS, so the browser blocks them as mixed content and the images never
 // appear. Route HTTP images through the HTTPS media proxy so they always load.
+const WORKER_BASE = "https://app-flow-tv.leandro91828945.workers.dev";
+
 export function proxiedImage(url?: string): string | undefined {
   if (!url) return undefined;
   const u = url.trim();
   if (!u) return undefined;
-  if (Capacitor.isNativePlatform()) return u;
-  return imageCandidates(url)[0];
+  return imageCandidates(u)[0];
 }
 
 export function imageCandidates(url?: string): string[] {
@@ -686,27 +687,35 @@ export function imageCandidates(url?: string): string[] {
   if (u.startsWith("https://")) {
     return [u];
   }
-  // No navegador web sob HTTPS: imagens HTTP de servidores IPTV são bloqueadas por Mixed Content.
+  // No APK Android ou navegador sob HTTPS: imagens HTTP de servidores IPTV são bloqueadas por Mixed Content.
   // Encaminha pelo proxy do Cloudflare Worker com cache.
-  if (typeof window !== "undefined" && !Capacitor.isNativePlatform() && u.startsWith("http://")) {
-    return [`/api/public/stream?kind=image&url=${encodeURIComponent(u)}`, u];
+  if (Capacitor.isNativePlatform() || (typeof window !== "undefined" && window.location.protocol === "https:")) {
+    return [`${WORKER_BASE}/api/public/stream?kind=image&url=${encodeURIComponent(u)}`, u];
   }
   return [u];
 }
 
 function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
-  if (typeof window === "undefined" || Capacitor.isNativePlatform()) {
+  if (typeof window === "undefined" || !absoluteUrl) {
     return absoluteUrl;
   }
-  if (forceTranscode) {
-    return `/api/public/transcode.m3u8?url=${encodeURIComponent(absoluteUrl)}`;
+  if (absoluteUrl.includes("/api/public/stream") || absoluteUrl.includes("/api/public/transcode")) {
+    return absoluteUrl;
   }
-  // No navegador web em HTTPS: se a URL do stream for HTTP, o navegador bloqueia (Mixed Content).
-  // Sempre encaminha streams HTTP pelo proxy seguro /api/public/stream do Cloudflare Worker.
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
   const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
   const ext = isHls ? "&ext=.m3u8" : "";
-  return `${path}?url=${encodeURIComponent(absoluteUrl)}${ext}`;
+
+  // No APK Android (Capacitor) ou na Web, a requisição no WebView precisa de CORS e User-Agent IPTV
+  const baseOrigin = (Capacitor.isNativePlatform() || window.location.hostname === "localhost" || window.location.protocol === "http:")
+    ? WORKER_BASE
+    : "";
+
+  if (forceTranscode) {
+    return `${baseOrigin}/api/public/transcode.m3u8?url=${encodeURIComponent(absoluteUrl)}`;
+  }
+
+  return `${baseOrigin}${path}?url=${encodeURIComponent(absoluteUrl)}${ext}`;
 }
 
 export function liveStreamUrl(a: Account, streamId: number): string {

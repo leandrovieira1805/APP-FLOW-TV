@@ -424,16 +424,24 @@ function LivePage() {
                   <button
                     onClick={() => {
                       const now = Date.now();
-                      setSelected(c);
-                      setReinitCount((n) => n + 1);
+                      if (selected?.stream_id === c.stream_id) {
+                        playerRef.current?.requestFullscreen();
+                      } else {
+                        setSelected(c);
+                        setReinitCount((n) => n + 1);
+                      }
                       lastSelectTime.current = now;
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         const now = Date.now();
-                        setSelected(c);
-                        setReinitCount((n) => n + 1);
+                        if (selected?.stream_id === c.stream_id) {
+                          playerRef.current?.requestFullscreen();
+                        } else {
+                          setSelected(c);
+                          setReinitCount((n) => n + 1);
+                        }
                         lastSelectTime.current = now;
                       }
                     }}

@@ -246,10 +246,18 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   );
   useImperativeHandle(ref, () => ({
     requestFullscreen: () => {
-      setFullscreen(true);
       if (Capacitor.isNativePlatform()) {
+        if (startNativePlayRef.current) {
+          if (videoRef.current) {
+            try { videoRef.current.pause(); } catch {}
+          }
+          startNativePlayRef.current();
+          return;
+        }
         forceLandscape();
+        setFullscreen(true);
       } else {
+        setFullscreen(true);
         const el = containerRef.current;
         if (!document.fullscreenElement) { safeRequestFullscreen(el, videoRef.current); }
       }
@@ -485,8 +493,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               if (onExitFullscreenRef.current) {
                 onExitFullscreenRef.current();
               }
-              // Sem onExitFullscreen (canais ao vivo): volta apenas ao estado
-              // normal da página — sem player web, sem navegação automática.
+              // Retoma o player web pequeno ao vivo se ainda estiver na página de Live
+              if (source.isLive && videoRef.current) {
+                try {
+                  videoRef.current.play().catch(() => {});
+                } catch {}
+              }
             }
           );
 
@@ -528,6 +540,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             title: currentItem?.title || title || "FLOW TV",
             smallTitle: currentItem?.smallTitle || subtitle || "",
             headers: nativeHeaders,
+            displayMode: "landscape",
             showControls: true,
             exitOnEnd: false,
             loopOnEnd: false,
@@ -602,22 +615,26 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         }
       };
 
-      playNative();
-      startNativePlayRef.current = playNative;
+      if (!source.isLive) {
+        playNative();
+        startNativePlayRef.current = playNative;
 
-      return () => {
-        cancelled = true;
-        startNativePlayRef.current = null;
-        if (pollTimer) clearInterval(pollTimer);
-        try {
-          nativeListenerPlay?.remove?.();
-          nativeListenerPause?.remove?.();
-          nativeListenerEnded?.remove?.();
-          nativeListenerExit?.remove?.();
-          nativeListenerIndex?.remove?.();
-          nativePlayerPlugin?.stopAllPlayers?.().catch(() => {});
-        } catch {}
-      };
+        return () => {
+          cancelled = true;
+          startNativePlayRef.current = null;
+          if (pollTimer) clearInterval(pollTimer);
+          try {
+            nativeListenerPlay?.remove?.();
+            nativeListenerPause?.remove?.();
+            nativeListenerEnded?.remove?.();
+            nativeListenerExit?.remove?.();
+            nativeListenerIndex?.remove?.();
+            nativePlayerPlugin?.stopAllPlayers?.().catch(() => {});
+          } catch {}
+        };
+      } else {
+        startNativePlayRef.current = playNative;
+      }
     }
 
     // Web player path — requires the <video> element (only rendered outside the APK).
@@ -893,7 +910,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNativePlatform ? `${playlistKey}\u0001${forceReinit ?? 0}` : source.url]);
+  }, [isNativePlatform && !source.isLive ? `${playlistKey}\u0001${forceReinit ?? 0}` : `${source.url}\u0001${forceReinit ?? 0}`]);
 
   // Auto-detect black screen (playing audio with 0 videoWidth/videoHeight on Web)
   useEffect(() => {
@@ -1438,6 +1455,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
   const toggleFullscreen = useCallback(() => {
     if (Capacitor.isNativePlatform()) {
+      if (startNativePlayRef.current) {
+        if (videoRef.current) {
+          try { videoRef.current.pause(); } catch {}
+        }
+        startNativePlayRef.current();
+        return;
+      }
       setFullscreen(prev => {
         const next = !prev;
         if (next) {
@@ -1659,8 +1683,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         else showControls();
       }}
     >
-      {/* Renderiza <video> apenas na Web. No APK nativo Android, o ExoPlayer gerencia a reprodução */}
-      {!Capacitor.isNativePlatform() && (
+      {/* Renderiza <video> na Web e no mini-player de Live TV no APK */}
+      {(!Capacitor.isNativePlatform() || !!source.isLive) && (
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
@@ -1702,7 +1726,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Center play button */}
-      {!Capacitor.isNativePlatform() && !playing && !loading && !error && (
+      {(!Capacitor.isNativePlatform() || !!source.isLive) && !playing && !loading && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1748,7 +1772,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Controls bar */}
-      {!Capacitor.isNativePlatform() && (
+      {(!Capacitor.isNativePlatform() || !!source.isLive) && (
         <div
           className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-3 pb-3 pt-10 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
