@@ -493,12 +493,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
               if (onExitFullscreenRef.current) {
                 onExitFullscreenRef.current();
               }
-              // Retoma o player web pequeno ao vivo se ainda estiver na página de Live
-              if (source.isLive && videoRef.current) {
-                try {
-                  videoRef.current.play().catch(() => {});
-                } catch {}
-              }
             }
           );
 
@@ -615,26 +609,22 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         }
       };
 
-      if (!source.isLive) {
-        playNative();
-        startNativePlayRef.current = playNative;
+      playNative();
+      startNativePlayRef.current = playNative;
 
-        return () => {
-          cancelled = true;
-          startNativePlayRef.current = null;
-          if (pollTimer) clearInterval(pollTimer);
-          try {
-            nativeListenerPlay?.remove?.();
-            nativeListenerPause?.remove?.();
-            nativeListenerEnded?.remove?.();
-            nativeListenerExit?.remove?.();
-            nativeListenerIndex?.remove?.();
-            nativePlayerPlugin?.stopAllPlayers?.().catch(() => {});
-          } catch {}
-        };
-      } else {
-        startNativePlayRef.current = playNative;
-      }
+      return () => {
+        cancelled = true;
+        startNativePlayRef.current = null;
+        if (pollTimer) clearInterval(pollTimer);
+        try {
+          nativeListenerPlay?.remove?.();
+          nativeListenerPause?.remove?.();
+          nativeListenerEnded?.remove?.();
+          nativeListenerExit?.remove?.();
+          nativeListenerIndex?.remove?.();
+          nativePlayerPlugin?.stopAllPlayers?.().catch(() => {});
+        } catch {}
+      };
     }
 
     // Web player path — requires the <video> element (only rendered outside the APK).
@@ -1683,8 +1673,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         else showControls();
       }}
     >
-      {/* Renderiza <video> na Web e no mini-player de Live TV no APK */}
-      {(!Capacitor.isNativePlatform() || !!source.isLive) && (
+      {/* Renderiza <video> apenas na Web. No APK nativo Android, o ExoPlayer gerencia a reprodução */}
+      {!Capacitor.isNativePlatform() && (
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
@@ -1726,7 +1716,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Center play button */}
-      {(!Capacitor.isNativePlatform() || !!source.isLive) && !playing && !loading && !error && (
+      {!Capacitor.isNativePlatform() && !playing && !loading && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1772,7 +1762,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Controls bar */}
-      {(!Capacitor.isNativePlatform() || !!source.isLive) && (
+      {!Capacitor.isNativePlatform() && (
         <div
           className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-3 pb-3 pt-10 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"

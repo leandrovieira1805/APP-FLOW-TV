@@ -9,6 +9,7 @@ import { getLiveCategories, getLiveStreams, liveStreamUrl, proxiedImage, type Li
 import { toggleFavorite, isFavorite } from "../lib/storage";
 import { toast } from "sonner";
 import { useIsMobile } from "../hooks/use-mobile";
+import { Capacitor } from "@capacitor/core";
 
 export const Route = createFileRoute("/live")({
   validateSearch: (search: Record<string, string>) => ({
@@ -291,7 +292,12 @@ function LivePage() {
                 setSelected(ch);
               }
             }}
-            onExitFullscreen={() => setShowChannels(true)}
+            onExitFullscreen={() => {
+              setShowChannels(true);
+              if (Capacitor.isNativePlatform()) {
+                setSelected(null);
+              }
+            }}
             forceReinit={reinitCount}
           />
               <div className={`mt-3 flex items-center gap-2 ${isMobile ? "flex" : "hidden"}`}>
@@ -424,24 +430,16 @@ function LivePage() {
                   <button
                     onClick={() => {
                       const now = Date.now();
-                      if (selected?.stream_id === c.stream_id) {
-                        playerRef.current?.requestFullscreen();
-                      } else {
-                        setSelected(c);
-                        setReinitCount((n) => n + 1);
-                      }
+                      setSelected(c);
+                      setReinitCount((n) => n + 1);
                       lastSelectTime.current = now;
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         const now = Date.now();
-                        if (selected?.stream_id === c.stream_id) {
-                          playerRef.current?.requestFullscreen();
-                        } else {
-                          setSelected(c);
-                          setReinitCount((n) => n + 1);
-                        }
+                        setSelected(c);
+                        setReinitCount((n) => n + 1);
                         lastSelectTime.current = now;
                       }
                     }}
