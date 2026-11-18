@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebSettings
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -12,9 +13,9 @@ import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Enforce cutout shortEdges on window attributes before and after onCreate
         applyCutoutMode()
         super.onCreate(savedInstanceState)
+        setupZeroInsets()
         applyFullscreenEdgeToEdge()
     }
 
@@ -30,17 +31,48 @@ class MainActivity : BridgeActivity() {
         }
     }
 
+    private fun setupZeroInsets() {
+        // Prevent CoordinatorLayout and WebView from receiving insets and adding top/bottom padding
+        try {
+            bridge?.webView?.fitsSystemWindows = false
+            findViewById<View>(android.R.id.content)?.fitsSystemWindows = false
+            window.decorView.fitsSystemWindows = false
+
+            ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, _ ->
+                WindowInsetsCompat.CONSUMED
+            }
+
+            val webView = bridge?.webView
+            if (webView != null) {
+                ViewCompat.setOnApplyWindowInsetsListener(webView) { _, _ ->
+                    WindowInsetsCompat.CONSUMED
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun applyCutoutMode() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        try {
             val lp = window.attributes
-            lp.layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                lp.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                lp.layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
             window.attributes = lp
-        }
+        } catch (_: Exception) {}
     }
 
     private fun applyFullscreenEdgeToEdge() {
         applyCutoutMode()
+
+        // Allow window to lay out beyond screen limits into status/navigation/cutout areas
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        )
 
         // Don't let system windows fit decor (allows 100% full screen coverage)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -51,7 +83,7 @@ class MainActivity : BridgeActivity() {
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
 
-        // Ensure flags are also active for full immersive mode
+        // Ensure flags are also active for full immersive sticky mode
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
