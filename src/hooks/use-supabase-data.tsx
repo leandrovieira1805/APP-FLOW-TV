@@ -233,6 +233,42 @@ export function useWatchHistory() {
       (h) => h.contentType === data.contentType && Number(h.contentId) === numContentId
     );
     const finalDuration = (data.duration && data.duration > 0) ? data.duration : (existingItem?.duration || 0);
+    const finalPos = Math.floor(Math.max(0, data.position || 0));
+    const finalDur = Math.floor(Math.max(0, finalDuration));
+
+    const updatedEntry: WatchHistory = {
+      id: `${data.contentType}:${numContentId}`,
+      userId: activeUsername || "local",
+      contentType: data.contentType,
+      contentId: numContentId,
+      episodeId: data.episodeId ? String(data.episodeId) : null,
+      title: data.title,
+      poster: data.poster,
+      position: finalPos,
+      duration: finalDur,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Atualização otimista imediata na memória para o botão "Continuar assistindo" ter o tempo exato
+    queryClient.setQueriesData<WatchHistory[]>(
+      { queryKey: ["watchHistory"] },
+      (old = []) => {
+        const filtered = (old || []).filter(
+          (h) => !(h.contentType === data.contentType && Number(h.contentId) === numContentId)
+        );
+        return [updatedEntry, ...filtered];
+      }
+    );
+
+    // Salva localmente em cache para retomada instantânea mesmo se fechar o app
+    try {
+      const localList = loadLocalHistory().filter(
+        (h) => !(h.contentType === data.contentType && Number(h.contentId) === numContentId)
+      );
+      localList.unshift(updatedEntry);
+      saveLocalHistory(localList);
+    } catch {}
 
     const activeTokens = getAuthTokens();
     const canUseBackend = useBackend || !!activeTokens?.accessToken;
@@ -240,51 +276,15 @@ export function useWatchHistory() {
     if (canUseBackend) {
       saveWatchProgress(
         data.contentType, numContentId, data.title, data.poster,
-        data.position, finalDuration, data.episodeId
+        finalPos, finalDur, data.episodeId
       ).then(() => {
         if (data._invalidate) {
           queryClient.invalidateQueries({ queryKey: ["watchHistory"] });
         }
       }).catch((err) => {
-        console.warn("saveWatchProgress remote failed, saving locally:", err);
-        const list = loadLocalHistory().filter(
-          (h) => !(h.contentType === data.contentType && Number(h.contentId) === numContentId)
-        );
-        const entry: WatchHistory = {
-          id: `${data.contentType}:${numContentId}`,
-          userId: "local",
-          contentType: data.contentType,
-          contentId: numContentId,
-          episodeId: data.episodeId ?? null,
-          title: data.title,
-          poster: data.poster,
-          position: Math.floor(data.position),
-          duration: Math.floor(finalDuration),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        list.unshift(entry);
-        saveLocalHistory(list);
+        console.warn("saveWatchProgress remote failed:", err);
       });
     } else {
-      const list = loadLocalHistory().filter(
-        (h) => !(h.contentType === data.contentType && Number(h.contentId) === numContentId)
-      );
-      const entry: WatchHistory = {
-        id: `${data.contentType}:${numContentId}`,
-        userId: "local",
-        contentType: data.contentType,
-        contentId: numContentId,
-        episodeId: data.episodeId ?? null,
-        title: data.title,
-        poster: data.poster,
-        position: Math.floor(data.position),
-        duration: Math.floor(finalDuration),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      list.unshift(entry);
-      saveLocalHistory(list);
       if (data._invalidate) {
         queryClient.invalidateQueries({ queryKey: ["watchHistory"] });
       }

@@ -88,7 +88,7 @@ function MoviePage() {
   const activeBrand = resolveBrand(brand, title, from);
 
   const resume = history.find(
-    (h) => h.contentType === "movie" && h.contentId === streamId
+    (h) => h.contentType === "movie" && Number(h.contentId) === Number(streamId)
   );
 
   const handlePlayResume = useCallback(() => {

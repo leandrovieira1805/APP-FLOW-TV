@@ -68,6 +68,14 @@ class MainActivity : BridgeActivity() {
     private fun applyFullscreenEdgeToEdge() {
         applyCutoutMode()
 
+        try {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        } catch (_: Exception) {}
+
         // Allow window to lay out beyond screen limits into status/navigation/cutout areas
         window.setFlags(
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -93,6 +101,13 @@ class MainActivity : BridgeActivity() {
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_FULLSCREEN
         )
+
+        @Suppress("DEPRECATION")
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if ((visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
     }
 
     override fun onStart() {

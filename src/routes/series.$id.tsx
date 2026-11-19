@@ -80,6 +80,7 @@ function SeriesDetailPage() {
 
   const [season, setSeason] = useState<number | null>(null);
   const [current, setCurrent] = useState<FlatEpisode | null>(null);
+  const [startPosition, setStartPosition] = useState(0);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const lastSave = useRef(0);
   const hasUserSelectedSeasonRef = useRef(false);
@@ -100,7 +101,7 @@ function SeriesDetailPage() {
   const activeBrand = resolveBrand(brand, title, from);
 
   const resume = history.find(
-    (h) => h.contentType === "series" && h.contentId === seriesId
+    (h) => h.contentType === "series" && Number(h.contentId) === Number(seriesId)
   );
 
   const seasonNumbers = useMemo(() => {
@@ -120,7 +121,7 @@ function SeriesDetailPage() {
   useEffect(() => {
     if (season === null && seasonNumbers.length) {
       if (resume?.episodeId) {
-        const ep = flatEpisodes.find((e) => e.id === resume.episodeId);
+        const ep = flatEpisodes.find((e) => String(e.id) === String(resume.episodeId));
         if (ep) {
           setSeason(ep.seasonNum);
           return;
@@ -131,16 +132,19 @@ function SeriesDetailPage() {
   }, [seasonNumbers, season, resume, flatEpisodes]);
 
   const playEpisode = (ep: FlatEpisode, startAt = 0) => {
+    const pos = startAt > 0 ? startAt : (resume && String(resume.episodeId) === String(ep.id) ? (resume.position || 0) : 0);
+    setStartPosition(pos);
     setCurrent(ep);
   };
 
   const handleNext = () => {
     if (!current) return;
     const idx = flatEpisodes.findIndex(
-      (e) => e.id === current.id && e.seasonNum === current.seasonNum
+      (e) => String(e.id) === String(current.id) && e.seasonNum === current.seasonNum
     );
     const next = flatEpisodes[idx + 1];
     if (next) {
+      setStartPosition(0);
       setCurrent(next);
       toast.success(`Próximo: ${next.title}`);
     } else {
@@ -152,10 +156,11 @@ function SeriesDetailPage() {
   const handlePrev = () => {
     if (!current) return;
     const idx = flatEpisodes.findIndex(
-      (e) => e.id === current.id && e.seasonNum === current.seasonNum
+      (e) => String(e.id) === String(current.id) && e.seasonNum === current.seasonNum
     );
     if (idx > 0) {
       const prev = flatEpisodes[idx - 1];
+      setStartPosition(0);
       setCurrent(prev);
       toast.success(`Anterior: ${prev.title}`);
     }
@@ -222,7 +227,7 @@ function SeriesDetailPage() {
 
   const episodesOfSeason = (season !== null && data?.episodes?.[String(season)]) || [];
   const resumeEpisode = resume?.episodeId
-    ? flatEpisodes.find((e) => e.id === resume.episodeId)
+    ? flatEpisodes.find((e) => String(e.id) === String(resume.episodeId))
     : flatEpisodes[0];
 
   const playlistIndex = current
@@ -234,9 +239,10 @@ function SeriesDetailPage() {
 
   useEffect(() => {
     if (play === "1" && resumeEpisode && !current) {
+      setStartPosition(resume?.position || 0);
       setCurrent(resumeEpisode);
     }
-  }, [play, resumeEpisode, current]);
+  }, [play, resumeEpisode, current, resume]);
 
   // If user came from standard site (no activeBrand), render standard FLOW TV AppShell layout
   if (!activeBrand) {
@@ -255,7 +261,7 @@ function SeriesDetailPage() {
               }}
               title={`${title} — T${current.seasonNum}:E${current.episode_num} ${current.title}`}
               poster={proxiedImage(current.info?.movie_image) || cover}
-              startPosition={resume?.episodeId === current.id ? resume.position : 0}
+              startPosition={startPosition > 0 ? startPosition : (resume && String(resume.episodeId) === String(current.id) ? (resume.position || 0) : 0)}
               knownDuration={parseDurationToSeconds(current.info?.duration_secs || current.info?.duration)}
               autoFullscreen
               onProgress={handleProgress}
@@ -274,6 +280,7 @@ function SeriesDetailPage() {
               onPlaylistIndex={(idx) => {
                 const ep = flatEpisodes[idx];
                 if (ep && (!current || String(ep.id) !== String(current.id))) {
+                  setStartPosition(0);
                   setCurrent(ep);
                   setSeason(ep.seasonNum);
                 }
@@ -464,7 +471,7 @@ function SeriesDetailPage() {
             }}
             title={`${title} — T${current.seasonNum}:E${current.episode_num} ${current.title}`}
             poster={proxiedImage(current.info?.movie_image) || cover}
-            startPosition={resume?.episodeId === current.id ? resume.position : 0}
+            startPosition={startPosition > 0 ? startPosition : (resume && String(resume.episodeId) === String(current.id) ? (resume.position || 0) : 0)}
             knownDuration={parseDurationToSeconds(current.info?.duration_secs || current.info?.duration)}
             autoFullscreen
             onProgress={handleProgress}
@@ -483,6 +490,7 @@ function SeriesDetailPage() {
             onPlaylistIndex={(idx) => {
               const ep = flatEpisodes[idx];
               if (ep && (!current || String(ep.id) !== String(current.id))) {
+                setStartPosition(0);
                 setCurrent(ep);
                 setSeason(ep.seasonNum);
               }

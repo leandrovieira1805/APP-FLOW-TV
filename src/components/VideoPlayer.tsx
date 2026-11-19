@@ -573,6 +573,23 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             setPlaying(true);
             isNativeActiveRef.current = true;
             activeNativeUrlRef.current = finalUrl;
+
+            // Se iniciando com progresso salvo (resume), reforça seek no ExoPlayer nativo
+            if (startProgressRef.current > 0 && !source.isLive) {
+              const seekSec = Math.floor(startProgressRef.current);
+              setTimeout(() => {
+                (CapacitorVideoPlayer as any).setCurrentTime({
+                  playerId: "fullscreen",
+                  seektime: seekSec,
+                }).catch(() => {});
+              }, 400);
+              setTimeout(() => {
+                (CapacitorVideoPlayer as any).setCurrentTime({
+                  playerId: "fullscreen",
+                  seektime: seekSec,
+                }).catch(() => {});
+              }, 1200);
+            }
             // Native playback does not emit continuous progress; poll the plugin
             // periodically so progress/resume is saved while watching.
             if (pollTimer) clearInterval(pollTimer);
