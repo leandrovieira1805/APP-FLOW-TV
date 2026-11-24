@@ -787,6 +787,23 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             if (!data.fatal) return;
             switch (data.type) {
               case HlsMod.ErrorTypes.NETWORK_ERROR:
+                const currentSourceUrl = currentUrlRef.current || finalUrl;
+                if ((data.response?.code === 403 || data.response?.code === 502 || data.response?.code === 503) && currentSourceUrl && currentSourceUrl.includes("/api/public/stream")) {
+                  try {
+                    const parsed = new URL(currentSourceUrl, window.location.origin);
+                    const raw = parsed.searchParams.get("url");
+                    if (raw && /^https?:\/\//i.test(raw)) {
+                      console.log(`[HLS] Proxy failed with ${data.response?.code}, recovering with direct URL:`, raw);
+                      currentUrlRef.current = raw;
+                      hls.stopLoad();
+                      hls.loadSource(raw);
+                      hls.startLoad();
+                      return;
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }
                 if (data.response?.code === 502 || data.response?.code === 404) {
                   hlsHandledError.current = true;
                   setLoading(false);

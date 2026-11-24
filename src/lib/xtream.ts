@@ -702,6 +702,15 @@ function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
   if (absoluteUrl.includes("/api/public/stream") || absoluteUrl.includes("/api/public/transcode")) {
     return absoluteUrl;
   }
+
+  // Se a URL já for HTTPS (ex: https://zero1.shop), NÃO passa pelo proxy do Worker.
+  // Servidores HTTPS de IPTV já possuem CORS liberado (Access-Control-Allow-Origin: *)
+  // e passam direto pelo navegador sem Mixed Content.
+  // Encaminhar pelo Worker faz o Cloudflare do servidor IPTV bloquear com 403 (Error 1003).
+  if (absoluteUrl.startsWith("https://")) {
+    return absoluteUrl;
+  }
+
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
   const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
   const ext = isHls ? "&ext=.m3u8" : "";
