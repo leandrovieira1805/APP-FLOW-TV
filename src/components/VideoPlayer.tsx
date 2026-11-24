@@ -58,6 +58,9 @@ import {
   ArrowLeft,
   Wifi,
   WifiOff,
+  ShieldAlert,
+  ExternalLink,
+  Download,
 } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -332,6 +335,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(!Capacitor.isNativePlatform() || !!source.isLive);
   const [error, setError] = useState<string | null>(null);
+  const [isCertBlock, setIsCertBlock] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [offline, setOffline] = useState(false);
 
@@ -854,6 +858,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                   hlsHandledError.current = true;
                   setLoading(false);
                   setReconnecting(false);
+                  if (!Capacitor.isNativePlatform() && source.isLive) {
+                    setIsCertBlock(true);
+                  }
                   setError("Este título está temporariamente indisponível no servidor de origem (Provedor offline).");
                   hls.destroy();
                   break;
@@ -861,9 +868,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
                 setReconnecting(true);
                 reconnectAttempts.current += 1;
                 if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-                if (reconnectAttempts.current > 10) {
+                const isWeb = !Capacitor.isNativePlatform();
+                const maxTries = (isWeb && source.isLive) ? 3 : 10;
+                if (reconnectAttempts.current > maxTries) {
                   setLoading(false);
                   setReconnecting(false);
+                  if (isWeb && source.isLive) {
+                    setIsCertBlock(true);
+                  }
                   setError("Este canal/filme não respondeu. Tente outro conteúdo.");
                   hls.destroy();
                   break;
@@ -1013,32 +1025,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       const v = videoRef.current;
       if (!v) return;
       if (!v.paused && v.currentTime > 0.3 && (v.videoWidth === 0 || v.videoHeight === 0)) {
-        console.warn("Black screen detected (videoWidth=0). HEVC/4K unsupported directly in browser. Switching to server transcode...");
-        const targetUrl = currentUrlRef.current || source.url;
-        if (!targetUrl.includes("/api/public/transcode") && !transcodeTriedRef.current) {
-          transcodeTriedRef.current = true;
-          setLoading(true);
-          const tcUrl = buildTranscodeUrl(targetUrl);
-          import("hls.js").then((HlsMod) => {
-            if (!HlsMod.default.isSupported()) return;
-            v.removeAttribute("src");
-            v.load();
-            const hls = new HlsMod.default({
-              enableWorker: true,
-              lowLatencyMode: false,
-              fragLoadingMaxRetry: 5,
-              manifestLoadingMaxRetry: 5,
-            });
-            hls.loadSource(tcUrl);
-            hls.attachMedia(v);
-            hlsRef.current = hls;
-            hls.on(HlsMod.default.Events.MANIFEST_PARSED, () => {
-              setLoading(false);
-              setError(null);
-              v.play().catch(() => setPlaying(false));
-            });
-          }).catch(() => {});
-        }
+        // Live streams may take a moment to report dimensions, or audio-only streams
+        if (source.isLive) return;
+        console.warn("Video dimension is 0. Awaiting metadata...");
       }
     }, 1800);
 
@@ -1162,9 +1151,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       setLoading(false);
       setReconnecting(false);
 
-      // If native player failed with format error (code 4), try HLS fallbacks:
-      // 1) .m3u8 conversion trick (upstream-provided HLS)
-      // 2) server-side ffmpeg transcoding (/api/public/transcode)
+      if (!Capacitor.isNativePlatform() && (source.isLive || /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(currentUrlRef.current || ""))) {
+        setIsCertBlock(true);
+      }
+
+      if (source.isLive) {
+        setError("Canal indisponível ou bloqueado pelo navegador.");
+        return;
+      }
+
+      // If native player failed with format error (code 4), try HLS fallback (.m3u8)
       if ((code === 3 || code === 4) && !hlsRef.current) {
         console.warn(`Native format/decode error (code ${code}). Attempting fallback HLS stream with transcode...`);
         setLoading(true);
@@ -1718,6 +1714,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   };
 
   const reload = () => {
+    setIsCertBlock(false);
     setError(null);
     setLoading(true);
     if (Capacitor.isNativePlatform()) {
@@ -1806,15 +1803,65 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
 
       {/* Error overlay */}
       {error && (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/80 p-6 text-center">
-          <WifiOff className="h-12 w-12 text-destructive" />
-          <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
-          <button
-            onClick={reload}
-            className="focusable inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground"
-          >
-            <RotateCcw className="h-4 w-4" /> Tentar novamente
-          </button>
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/90 p-6 text-center">
+          {!Capacitor.isNativePlatform() && (isCertBlock || source.isLive) ? (
+            <div className="max-w-md flex flex-col items-center gap-3">
+              <div className="grid h-14 w-14 place-items-center rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 shadow-glow">
+                <ShieldAlert className="h-7 w-7" />
+              </div>
+              <h3 className="text-base font-bold text-white">Canal em Servidor com Certificado Próprio</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Alguns canais utilizam servidores dedicados com IP direto do provedor (<code>38.46.220.125</code> ou <code>208.115.193.199</code>). Navegadores exigem que você autorize a conexão uma única vez para liberar o streaming.
+              </p>
+              
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open("https://38.46.220.125", "_blank");
+                    window.open("https://208.115.193.199", "_blank");
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-500 hover:bg-amber-600 px-4 py-2.5 text-xs font-semibold text-black shadow-md transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> 🔓 Autorizar no Navegador
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={reload}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary hover:bg-primary/90 px-4 py-2.5 text-xs font-semibold text-white shadow-md transition-colors"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> 🔄 Tentar Novamente
+                </button>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground/75 mt-1">
+                Ao clicar em <b>Autorizar</b>, abrirá abas com aviso do navegador. Clique em <b>Avançado &gt; Ir para o site (não seguro)</b>. Em seguida, volte aqui e clique em <b>Tentar Novamente</b>.
+              </p>
+
+              <div className="mt-3 pt-3 border-t border-white/10 w-full flex flex-col items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Ou assista diretamente no app sem restrições:</span>
+                <a
+                  href="/downloads/FLOW.apk"
+                  download="FLOW.apk"
+                  className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+                >
+                  <Download className="h-3.5 w-3.5" /> Baixar FLOW TV para TV Box e Android
+                </a>
+              </div>
+            </div>
+          ) : (
+            <>
+              <WifiOff className="h-12 w-12 text-destructive" />
+              <p className="max-w-sm text-sm text-muted-foreground">{error}</p>
+              <button
+                onClick={reload}
+                className="focusable inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground"
+              >
+                <RotateCcw className="h-4 w-4" /> Tentar novamente
+              </button>
+            </>
+          )}
         </div>
       )}
 
