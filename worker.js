@@ -134,24 +134,72 @@ export default {
       }
 
       try {
-        const upstream = await fetch(target, {
-          method: request.method === "HEAD" ? "HEAD" : "GET",
-          headers: upstreamHeaders,
-          redirect: "follow",
-        });
+        let currentTarget = target;
+        let upstream = null;
+        let finalUrl = target;
+
+        // Segue redirects manualmente para interceptar redirecionamentos para IPs diretos (ex: 38.46.220.125)
+        // e convertê-los para sslip.io na porta 80 (HTTP), contornando o erro 1003 do Cloudflare e o erro de certificado SSL autoassinado do painel
+        for (let hop = 0; hop < 5; hop++) {
+          let u;
+          try {
+            u = new URL(currentTarget);
+          } catch {
+            break;
+          }
+
+          if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(u.hostname)) {
+            currentTarget = `http://${u.hostname}.sslip.io:80${u.pathname}${u.search}`;
+          }
+
+          const fetchHeaders = new Headers(upstreamHeaders);
+          try {
+            const hUrl = new URL(currentTarget);
+            fetchHeaders.set("Referer", `${hUrl.origin}/`);
+          } catch {}
+
+          const res = await fetch(currentTarget, {
+            method: request.method === "HEAD" ? "HEAD" : "GET",
+            headers: fetchHeaders,
+            redirect: "manual",
+          });
+
+          if ([301, 302, 303, 307, 308].includes(res.status)) {
+            const loc = res.headers.get("Location");
+            if (!loc) {
+              upstream = res;
+              finalUrl = currentTarget;
+              break;
+            }
+            try {
+              currentTarget = new URL(loc, currentTarget).toString();
+            } catch {
+              currentTarget = loc;
+            }
+            continue;
+          }
+
+          upstream = res;
+          finalUrl = currentTarget;
+          break;
+        }
+
+        if (!upstream) {
+          return new Response("Upstream unreachable", { status: 502, headers: corsHeaders });
+        }
 
         const contentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
-        const isRealHls = isHls && (
+        const isRealHls =
+          url.pathname.includes(".m3u8") ||
+          url.searchParams.get("ext") === ".m3u8" ||
+          isHls ||
           contentType.includes("mpegurl") ||
-          contentType.includes("x-mpegurl") ||
-          contentType.includes("text/") ||
-          (!contentType.includes("video/") && !contentType.includes("octet-stream") && !contentType.includes("binary/"))
-        );
+          contentType.includes("x-mpegurl");
 
         // Se for playlist HLS de verdade (.m3u8), reescreve as rotas para o proxy HTTPS
         if (isRealHls && upstream.ok) {
           const playlistText = await upstream.text();
-          const baseUrl = upstream.url || target;
+          const baseUrl = finalUrl || upstream.url || target;
           const lines = playlistText.split(/\r?\n/);
           const rewritten = lines.map((line) => {
             const trimmed = line.trim();

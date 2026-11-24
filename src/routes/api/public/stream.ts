@@ -97,26 +97,69 @@ async function handle(request: Request): Promise<Response> {
   const range = request.headers.get("range");
   if (range) upstreamHeaders["Range"] = range;
 
-  let upstream: Response;
+  let upstream: Response | null = null;
+  let finalUrl = target;
+
   try {
     const controller = new AbortController();
-    // Timeout de 30s para streams, 10s para imagens
     const timeoutMs = looksLikeImage ? 10000 : 30000;
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    
-    upstream = await fetch(target, {
-      method: request.method === "HEAD" ? "HEAD" : "GET",
-      headers: upstreamHeaders,
-      redirect: "follow",
-      signal: controller.signal,
-    });
+
+    let currentTarget = target;
+    for (let hop = 0; hop < 5; hop++) {
+      let u: URL;
+      try {
+        u = new URL(currentTarget);
+      } catch {
+        break;
+      }
+
+      // Converte IP direto para sslip.io na porta 80
+      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(u.hostname)) {
+        currentTarget = `http://${u.hostname}.sslip.io:80${u.pathname}${u.search}`;
+      }
+
+      const fetchHeaders: Record<string, string> = { ...upstreamHeaders };
+      try {
+        const hUrl = new URL(currentTarget);
+        fetchHeaders.Referer = `${hUrl.origin}/`;
+      } catch {}
+
+      const res = await fetch(currentTarget, {
+        method: request.method === "HEAD" ? "HEAD" : "GET",
+        headers: fetchHeaders,
+        redirect: "manual",
+        signal: controller.signal,
+      });
+
+      if ([301, 302, 303, 307, 308].includes(res.status)) {
+        const loc = res.headers.get("Location");
+        if (!loc) {
+          upstream = res;
+          finalUrl = currentTarget;
+          break;
+        }
+        try {
+          currentTarget = new URL(loc, currentTarget).toString();
+        } catch {
+          currentTarget = loc;
+        }
+        continue;
+      }
+
+      upstream = res;
+      finalUrl = currentTarget;
+      break;
+    }
     
     clearTimeout(timeoutId);
   } catch {
     return new Response("Upstream connection failed", { status: 502 });
   }
 
-  const finalUrl = upstream.url || target;
+  if (!upstream) {
+    return new Response("Upstream unreachable", { status: 502 });
+  }
   const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
   const isPlaylist =
     (contentType.includes("mpegurl") || contentType.includes("x-mpegurl")) ||

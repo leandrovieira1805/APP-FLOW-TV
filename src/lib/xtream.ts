@@ -695,7 +695,7 @@ export function imageCandidates(url?: string): string[] {
   return [u];
 }
 
-function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
+function proxiedUrl(absoluteUrl: string, forceTranscode = false, forceProxy = false): string {
   if (typeof window === "undefined" || !absoluteUrl) {
     return absoluteUrl;
   }
@@ -703,20 +703,23 @@ function proxiedUrl(absoluteUrl: string, forceTranscode = false): string {
     return absoluteUrl;
   }
 
-  // Se a URL já for HTTPS (ex: https://zero1.shop), NÃO passa pelo proxy do Worker.
-  // Servidores HTTPS de IPTV já possuem CORS liberado (Access-Control-Allow-Origin: *)
-  // e passam direto pelo navegador sem Mixed Content.
-  // Encaminhar pelo Worker faz o Cloudflare do servidor IPTV bloquear com 403 (Error 1003).
-  if (absoluteUrl.startsWith("https://")) {
+  // No APK nativo Android (Capacitor), o ExoPlayer acessa URLs diretamente sem restrições de navegador
+  if (Capacitor.isNativePlatform()) {
     return absoluteUrl;
   }
 
+  // Na Web: Se for live stream (.m3u8), SEMPRE passa pelo proxy do Worker para que o Worker
+  // faça o bypass automático de certificados autoassinados em IPs diretos (via sslip.io)
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
+  if (!forceProxy && !isHls && absoluteUrl.startsWith("https://")) {
+    return absoluteUrl;
+  }
+
   const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
   const ext = isHls ? "&ext=.m3u8" : "";
 
   // No APK Android (Capacitor) ou na Web, a requisição no WebView precisa de CORS e User-Agent IPTV
-  const baseOrigin = (Capacitor.isNativePlatform() || window.location.hostname === "localhost" || window.location.protocol === "http:")
+  const baseOrigin = (window.location.hostname === "localhost" || window.location.protocol === "http:")
     ? WORKER_BASE
     : "";
 
