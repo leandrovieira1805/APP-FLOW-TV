@@ -690,6 +690,52 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     };
 
     async function setup() {
+      // 1. Prioridade absoluta no iOS (iPhone / iPad / Safari):
+      // Usar SEMPRE o player nativo do sistema (AVPlayer da Apple).
+      // O WebKit/Safari no iOS tem aceleração nativa por hardware para HLS (.m3u8) e MP4.
+      // Isso abre o player nativo em tela cheia com AirPlay, PiP, controles de volume e gestos.
+      if (isIOS) {
+        video!.src = finalUrl;
+
+        const enterIOSNative = () => {
+          if (typeof (video as any).webkitEnterFullscreen === "function") {
+            try {
+              (video as any).webkitEnterFullscreen();
+            } catch (e) {
+              console.warn("iOS webkitEnterFullscreen failed:", e);
+            }
+          }
+        };
+
+        const onNativeMeta = () => {
+          setLoading(false);
+          seekToStart();
+          if (autoPlay) {
+            const playPromise = video!.play();
+            if (playPromise && playPromise.then) {
+              playPromise.then(() => {
+                enterIOSNative();
+              }).catch((err) => {
+                console.warn("iOS Autoplay blocked:", err);
+                setPlaying(false);
+              });
+            } else {
+              enterIOSNative();
+            }
+          }
+        };
+
+        if (video!.readyState >= 1) {
+          onNativeMeta();
+        } else {
+          video!.addEventListener("loadedmetadata", onNativeMeta, { once: true });
+          video!.addEventListener("loadeddata", onNativeMeta, { once: true });
+          video!.addEventListener("canplay", onNativeMeta, { once: true });
+          try { video!.load(); } catch (e) {}
+        }
+        return;
+      }
+
       if (isHls) {
         const HlsMod = (await import("hls.js")).default;
         if (cancelled) return;
@@ -1346,10 +1392,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     }
   }, [forceLandscape, source.isLive]);
 
-  // Auto-fullscreen on web / iOS Safari / Capacitor: when a video opens (movie/series), enter native
+  // Auto-fullscreen on web / iOS Safari / Capacitor: when a video opens (movie/series/live on iOS), enter native
   // fullscreen right away instead of playing inline.
   useEffect(() => {
-    if (!autoFullscreen) return;
+    if (!autoFullscreen && !isIOS) return;
 
     if (Capacitor.isNativePlatform()) {
       setFullscreen(true);
@@ -1734,7 +1780,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
-          playsInline
+          playsInline={!isIOS}
+          controls={isIOS}
           className={`absolute inset-0 block h-full w-full ${fitMode === "fill" ? "object-fill" : "object-contain"}`}
           style={{ zIndex: 0 }}
           onDoubleClick={toggleFullscreen}
