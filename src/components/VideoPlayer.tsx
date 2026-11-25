@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useImperativeHandle, forwardRef, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, useImperativeHandle, forwardRef, type ReactNode } from "react";
 import { useIsMobile } from "../hooks/use-mobile";
 import type Hls from "hls.js";
 
@@ -262,7 +262,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       } else {
         setFullscreen(true);
         const el = containerRef.current;
-        if (!document.fullscreenElement) { safeRequestFullscreen(el, videoRef.current); }
+        const v = videoRef.current;
+        if (!document.fullscreenElement) {
+          // No iOS Safari, tentar webkitEnterFullscreen diretamente
+          if (isIOS && v && typeof (v as any).webkitEnterFullscreen === "function") {
+            try {
+              (v as any).webkitEnterFullscreen();
+            } catch (e) {
+              // Se falhar (video ainda nao carregou), marcar pendente
+              pendingFullscreenRef.current = true;
+            }
+          } else {
+            safeRequestFullscreen(el, v);
+          }
+        }
       }
     },
   }));
@@ -277,6 +290,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
   const currentUrlRef = useRef<string>("");
   // Flag to suppress the native <video> onError when hls.js already handled it
   const hlsHandledError = useRef(false);
+  // iOS: se requestFullscreen for chamado antes do loadedmetadata, tentar novamente quando carregar
+  const pendingFullscreenRef = useRef(false);
   // Retry counter for native (non-HLS) playback errors
   const nativeRetryCount = useRef(0);
   const nativeRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1837,6 +1852,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           className={`absolute inset-0 block h-full w-full ${fitMode === "fill" ? "object-fill" : "object-contain"}`}
           style={{ zIndex: 0 }}
           onDoubleClick={toggleFullscreen}
+          onLoadedMetadata={() => {
+            // iOS: se estava pendente fullscreen (duplo toque antes de carregar), entrar agora
+            if (isIOS && pendingFullscreenRef.current) {
+              pendingFullscreenRef.current = false;
+              const v = videoRef.current;
+              if (v && typeof (v as any).webkitEnterFullscreen === "function") {
+                try { (v as any).webkitEnterFullscreen(); } catch (e) {}
+              }
+            }
+          }}
         />
       )}
 
