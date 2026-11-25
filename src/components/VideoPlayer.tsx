@@ -695,15 +695,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       // O WebKit/Safari no iOS tem aceleração nativa por hardware para HLS (.m3u8) e MP4.
       // Isso abre o player nativo em tela cheia com AirPlay, PiP, controles de volume e gestos.
       if (isIOS) {
+        video!.removeAttribute("playsinline");
+        video!.removeAttribute("webkit-playsinline");
         video!.src = finalUrl;
         seekToStart();
+
+        const onNativeEnter = () => {
+          setLoading(false);
+          setPlaying(true);
+        };
+        const onNativeExit = () => {
+          if (onExitFullscreen) onExitFullscreen();
+        };
+
+        video!.addEventListener("webkitbeginfullscreen", onNativeEnter);
+        video!.addEventListener("webkitendfullscreen", onNativeExit);
 
         const enterIOSNative = () => {
           if (typeof (video as any).webkitEnterFullscreen === "function") {
             try {
               (video as any).webkitEnterFullscreen();
             } catch (e) {
-              console.warn("iOS webkitEnterFullscreen failed:", e);
+              console.warn("iOS webkitEnterFullscreen deferred:", e);
             }
           }
         };
@@ -1802,7 +1815,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         <video
           ref={videoRef}
           poster={!playing ? poster : undefined}
-          playsInline={!isIOS}
+          playsInline={isIOS ? undefined : true}
           controls={isIOS}
           className={`absolute inset-0 block h-full w-full ${fitMode === "fill" ? "object-fill" : "object-contain"}`}
           style={{ zIndex: 0 }}
@@ -1863,13 +1876,41 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
             e.stopPropagation();
             const v = videoRef.current;
             if (v) {
-              v.play().catch(() => {});
+              setLoading(true);
+              v.removeAttribute("playsinline");
+              v.removeAttribute("webkit-playsinline");
+              if (!v.src || v.error) {
+                v.src = currentUrlRef.current;
+              }
+              v.load();
+              const p = v.play();
               try {
-                (v as any).webkitEnterFullscreen();
+                if (typeof (v as any).webkitEnterFullscreen === "function") {
+                  (v as any).webkitEnterFullscreen();
+                }
               } catch {}
+              if (p && p.then) {
+                p.then(() => {
+                  setLoading(false);
+                  setPlaying(true);
+                  try {
+                    if (typeof (v as any).webkitEnterFullscreen === "function") {
+                      (v as any).webkitEnterFullscreen();
+                    }
+                  } catch {}
+                }).catch((err) => {
+                  console.warn("iOS play error:", err);
+                  setLoading(false);
+                  try {
+                    if (typeof (v as any).webkitEnterFullscreen === "function") {
+                      (v as any).webkitEnterFullscreen();
+                    }
+                  } catch {}
+                });
+              }
             }
           }}
-          className="focusable absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60 p-4"
+          className="focusable absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60 p-4 cursor-pointer"
         >
           <div className="grid h-20 w-20 place-items-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform active:scale-95">
             <Play className="h-10 w-10 translate-x-0.5 fill-current" />

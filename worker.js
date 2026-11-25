@@ -4,8 +4,8 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS, HEAD, PUT, PATCH, DELETE",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, Range, X-Requested-With",
-  "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Range, X-Requested-With, X-Playback-Session-Id",
+  "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type",
 };
 
 export default {
@@ -140,7 +140,7 @@ export default {
 
         // Segue redirects manualmente para interceptar redirecionamentos para IPs diretos (ex: 38.46.220.125)
         // e convertê-los para sslip.io na porta 80 (HTTP), contornando o erro 1003 do Cloudflare e o erro de certificado SSL autoassinado do painel
-        for (let hop = 0; hop < 5; hop++) {
+        for (let hop = 0; hop < 6; hop++) {
           let u;
           try {
             u = new URL(currentTarget);
@@ -158,11 +158,40 @@ export default {
             fetchHeaders.set("Referer", `${hUrl.origin}/`);
           } catch {}
 
-          const res = await fetch(currentTarget, {
-            method: request.method === "HEAD" ? "HEAD" : "GET",
-            headers: fetchHeaders,
-            redirect: "manual",
-          });
+          let res;
+          try {
+            res = await fetch(currentTarget, {
+              method: request.method === "HEAD" ? "HEAD" : "GET",
+              headers: fetchHeaders,
+              redirect: "manual",
+            });
+          } catch (fetchErr) {
+            // Se falhar no HTTPS (ex: certificado autoassinado/COMMON_NAME_INVALID em IPTV), tenta HTTP
+            if (currentTarget.startsWith("https://")) {
+              currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
+              try {
+                res = await fetch(currentTarget, {
+                  method: request.method === "HEAD" ? "HEAD" : "GET",
+                  headers: fetchHeaders,
+                  redirect: "manual",
+                });
+              } catch (err2) {
+                throw fetchErr;
+              }
+            } else {
+              throw fetchErr;
+            }
+          }
+
+          // Se retornar erro de handshake SSL do Cloudflare (525/526), tenta via HTTP
+          if ((res.status === 525 || res.status === 526) && currentTarget.startsWith("https://")) {
+            currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
+            res = await fetch(currentTarget, {
+              method: request.method === "HEAD" ? "HEAD" : "GET",
+              headers: fetchHeaders,
+              redirect: "manual",
+            });
+          }
 
           if ([301, 302, 303, 307, 308].includes(res.status)) {
             const loc = res.headers.get("Location");
@@ -176,6 +205,10 @@ export default {
             } catch {
               currentTarget = loc;
             }
+            // Se o redirecionamento apontar para https em nó IPTV, prefere http para evitar falha SSL
+            if (currentTarget.startsWith("https://")) {
+              currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
+            }
             continue;
           }
 
@@ -188,13 +221,38 @@ export default {
           return new Response("Upstream unreachable", { status: 502, headers: corsHeaders });
         }
 
-        const contentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
+        const upstreamContentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
+
+        // Se o servidor IPTV retornou uma página HTML de erro (ex: 404 ou INVALID_CREDENTIALS do XUI.one),
+        // NÃO entregamos como stream 200 para evitar que o AVPlayer do iOS trave em tela preta
+        if (!looksLikeImage && upstreamContentType.includes("text/html") && !upstream.ok) {
+          return new Response(JSON.stringify({
+            error: "IPTV_STREAM_ERROR",
+            message: "O servidor IPTV retornou erro ou credenciais inválidas para esta mídia.",
+            status: upstream.status
+          }), {
+            status: upstream.status >= 400 ? upstream.status : 502,
+            headers: { "Content-Type": "application/json", ...corsHeaders }
+          });
+        }
+
         const isRealHls =
           url.pathname.includes(".m3u8") ||
           url.searchParams.get("ext") === ".m3u8" ||
           isHls ||
-          contentType.includes("mpegurl") ||
-          contentType.includes("x-mpegurl");
+          upstreamContentType.includes("mpegurl") ||
+          upstreamContentType.includes("x-mpegurl");
+
+        const isMp4 =
+          url.pathname.includes(".mp4") ||
+          url.searchParams.get("ext") === ".mp4" ||
+          /\.(mp4|m4v|mov)($|\?)/i.test(finalUrl) ||
+          /\.(mp4|m4v|mov)($|\?)/i.test(target);
+
+        const isTs =
+          url.pathname.includes(".ts") ||
+          /\.ts($|\?)/i.test(finalUrl) ||
+          /\.ts($|\?)/i.test(target);
 
         // Se for playlist HLS de verdade (.m3u8), reescreve as rotas para o proxy HTTPS
         if (isRealHls && upstream.ok) {
@@ -227,7 +285,7 @@ export default {
             resHeaders.set(k, v);
           }
           resHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
-          resHeaders.set("Cache-Control", "no-store");
+          resHeaders.set("Cache-Control", "no-cache, no-store, must-revalidate");
           return new Response(rewritten, { status: 200, headers: resHeaders });
         }
 
@@ -251,9 +309,22 @@ export default {
           const v = upstream.headers.get(h);
           if (v) resHeaders.set(h, v);
         }
-        if (!resHeaders.has("Accept-Ranges")) {
-          resHeaders.set("Accept-Ranges", "bytes");
+
+        // Garante MIME types compatíveis com o AVPlayer nativo do iOS
+        if (isMp4) {
+          resHeaders.set("Content-Type", "video/mp4");
+        } else if (isRealHls) {
+          resHeaders.set("Content-Type", "application/vnd.apple.mpegurl");
+        } else if (isTs) {
+          resHeaders.set("Content-Type", "video/mp2t");
+        } else if (!resHeaders.has("Content-Type") || resHeaders.get("Content-Type") === "application/octet-stream") {
+          if (/\.mp4($|\?)/i.test(finalUrl) || /\.mp4($|\?)/i.test(target)) {
+            resHeaders.set("Content-Type", "video/mp4");
+          }
         }
+
+        resHeaders.set("Accept-Ranges", "bytes");
+
         if (looksLikeImage) {
           resHeaders.set("Cache-Control", "public, max-age=604800, immutable");
         }

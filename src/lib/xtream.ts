@@ -710,8 +710,9 @@ function proxiedUrl(absoluteUrl: string, forceTranscode = false, forceProxy = fa
   // Na Web e iOS: SEMPRE passa pelo proxy do Worker para que o Worker
   // faça o bypass automático de CORS, User-Agent e certificados inválidos (SSL) em IPTV
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
-  const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
-  const ext = isHls ? "&ext=.m3u8" : "";
+  const isMp4 = /\.(mp4|m4v)($|\?)/i.test(absoluteUrl);
+  const path = isHls ? "/api/public/stream.m3u8" : (isMp4 ? "/api/public/stream.mp4" : "/api/public/stream");
+  const ext = isHls ? "&ext=.m3u8" : (isMp4 ? "&ext=.mp4" : "");
 
   // No APK Android (Capacitor) ou na Web, a requisição no WebView precisa de CORS e User-Agent IPTV
   const baseOrigin = (window.location.hostname === "localhost" || window.location.protocol === "http:")
