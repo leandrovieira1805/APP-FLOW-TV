@@ -64,7 +64,7 @@ export async function onRequest(context) {
     let upstream = null;
     let redirectCount = 0;
 
-    while (redirectCount < 6) {
+    while (redirectCount < 8) {
       let fetchUrl = currentUrl;
       try {
         upstream = await fetch(fetchUrl, {
@@ -73,14 +73,19 @@ export async function onRequest(context) {
           redirect: "manual",
         });
       } catch (err) {
-        // Se falhar no HTTPS (ex: certificado inválido/COMMON_NAME_INVALID comum em IPTV), tenta HTTP
+        // Se falhar no HTTPS (ex: certificado inválido/COMMON_NAME_INVALID comum em IPTV), tenta HTTP na porta 80
         if (fetchUrl.startsWith("https://")) {
-          fetchUrl = fetchUrl.replace(/^https:\/\//i, "http://");
-          upstream = await fetch(fetchUrl, {
-            method: request.method,
-            headers: upstreamHeaders,
-            redirect: "manual",
-          });
+          const httpFallback = fetchUrl.replace(/^https:\/\//i, "http://").replace(/:443(?=\/|$)/, ":80");
+          try {
+            upstream = await fetch(httpFallback, {
+              method: request.method,
+              headers: upstreamHeaders,
+              redirect: "manual",
+            });
+            currentUrl = httpFallback;
+          } catch (err2) {
+            throw err;
+          }
         } else {
           throw err;
         }
@@ -88,12 +93,15 @@ export async function onRequest(context) {
 
       // Se retornar erro de SSL do Cloudflare (525/526) em HTTPS, tenta via HTTP
       if ((upstream.status === 525 || upstream.status === 526) && fetchUrl.startsWith("https://")) {
-        fetchUrl = fetchUrl.replace(/^https:\/\//i, "http://");
-        upstream = await fetch(fetchUrl, {
-          method: request.method,
-          headers: upstreamHeaders,
-          redirect: "manual",
-        });
+        const httpFallback = fetchUrl.replace(/^https:\/\//i, "http://").replace(/:443(?=\/|$)/, ":80");
+        try {
+          upstream = await fetch(httpFallback, {
+            method: request.method,
+            headers: upstreamHeaders,
+            redirect: "manual",
+          });
+          currentUrl = httpFallback;
+        } catch {}
       }
 
       // Tratamento manual de redirecionamentos (301, 302, 303, 307, 308)
@@ -101,13 +109,11 @@ export async function onRequest(context) {
         const location = upstream.headers.get("Location");
         if (!location) break;
 
-        let nextUrl = new URL(location, fetchUrl).toString();
-        // Em servidores IPTV, nós de streaming (edge) frequentemente usam certificados SSL auto-assinados.
-        // Se redirecionar para https, tentar http caso o host seja IP ou domínio de CDN IPTV
-        if (nextUrl.startsWith("https://")) {
-          nextUrl = nextUrl.replace(/^https:\/\//i, "http://");
+        try {
+          currentUrl = new URL(location, fetchUrl).toString();
+        } catch {
+          currentUrl = location;
         }
-        currentUrl = nextUrl;
         redirectCount++;
         continue;
       }
@@ -115,8 +121,23 @@ export async function onRequest(context) {
       break;
     }
 
-    if (!upstream) {
-      return new Response("Failed to fetch upstream media", { status: 502, headers: corsHeaders });
+    if (!upstream || [301, 302, 303, 307, 308].includes(upstream.status)) {
+      return new Response("Failed to fetch upstream media: Upstream unreachable or redirect loop", { status: 502, headers: corsHeaders });
+    }
+
+    const upstreamContentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
+
+    // Se o servidor IPTV retornou uma página HTML (ex: erro 200/404 ou INVALID_STREAM_ID do XUI.one),
+    // NUNCA entregamos como stream de vídeo para evitar erro code 4 no AVPlayer do iOS
+    if (!looksLikeImage && (upstreamContentType.includes("text/html") || upstreamContentType.includes("text/plain"))) {
+      return new Response(JSON.stringify({
+        error: "IPTV_STREAM_ERROR",
+        message: "O servidor IPTV retornou erro ou formato incompatível para este vídeo.",
+        status: upstream.status
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json", ...corsHeaders }
+      });
     }
 
     // Se for playlist HLS (.m3u8), reescreve links relativos e absolutos para passar pelo proxy

@@ -303,8 +303,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
     let probeUrl = targetUrl;
     try {
       const parsed = new URL(targetUrl, window.location.origin);
-      const raw = parsed.searchParams.get("url");
-      if (raw) probeUrl = raw;
+      if (Capacitor.isNativePlatform()) {
+        const raw = parsed.searchParams.get("url");
+        if (raw) probeUrl = raw;
+      }
     } catch {}
 
     if (!probeUrl.startsWith("http")) return;
@@ -1277,7 +1279,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       }
 
       if (code === 4) {
-        setError("Formato de vídeo não suportado neste dispositivo. Tente outro canal.");
+        if (isIOS) {
+          setError("Este filme está em formato incompatível com o iOS (MKV). O iPhone suporta apenas vídeos em MP4.");
+        } else {
+          setError("Formato de vídeo não suportado neste dispositivo. Tente outro título.");
+        }
       } else if (code === 2) {
         setError("Erro de rede ao carregar a transmissão. Verifique sua conexão.");
       } else {

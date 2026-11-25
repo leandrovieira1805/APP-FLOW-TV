@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+﻿import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Tv, Search, Heart, ChevronRight, ArrowLeft, Maximize } from "lucide-react";
 import { AppShell } from "../components/AppShell";
@@ -430,14 +430,31 @@ function LivePage() {
                   <button
                     onClick={() => {
                       const now = Date.now();
+                      // Duplo toque: se canal ja selecionado e < 400ms, abre fullscreen
+                      if (selected?.stream_id === c.stream_id && now - lastSelectTime.current < 400) {
+                        playerRef.current?.requestFullscreen();
+                        lastSelectTime.current = 0;
+                        return;
+                      }
                       setSelected(c);
                       setReinitCount((n) => n + 1);
                       lastSelectTime.current = now;
+                    }}
+                    onDoubleClick={() => {
+                      // Fallback para desktop (mouse real)
+                      if (selected?.stream_id === c.stream_id) {
+                        playerRef.current?.requestFullscreen();
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         const now = Date.now();
+                        if (selected?.stream_id === c.stream_id && now - lastSelectTime.current < 400) {
+                          playerRef.current?.requestFullscreen();
+                          lastSelectTime.current = 0;
+                          return;
+                        }
                         setSelected(c);
                         setReinitCount((n) => n + 1);
                         lastSelectTime.current = now;

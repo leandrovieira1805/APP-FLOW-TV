@@ -140,7 +140,7 @@ export default {
 
         // Segue redirects manualmente para interceptar redirecionamentos para IPs diretos (ex: 38.46.220.125)
         // e convertê-los para sslip.io na porta 80 (HTTP), contornando o erro 1003 do Cloudflare e o erro de certificado SSL autoassinado do painel
-        for (let hop = 0; hop < 6; hop++) {
+        for (let hop = 0; hop < 8; hop++) {
           let u;
           try {
             u = new URL(currentTarget);
@@ -166,15 +166,16 @@ export default {
               redirect: "manual",
             });
           } catch (fetchErr) {
-            // Se falhar no HTTPS (ex: certificado autoassinado/COMMON_NAME_INVALID em IPTV), tenta HTTP
+            // Se falhar no HTTPS (ex: certificado autoassinado/COMMON_NAME_INVALID em IPTV), tenta HTTP na porta 80
             if (currentTarget.startsWith("https://")) {
-              currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
+              const httpFallback = currentTarget.replace(/^https:\/\//i, "http://").replace(/:443(?=\/|$)/, ":80");
               try {
-                res = await fetch(currentTarget, {
+                res = await fetch(httpFallback, {
                   method: request.method === "HEAD" ? "HEAD" : "GET",
                   headers: fetchHeaders,
                   redirect: "manual",
                 });
+                currentTarget = httpFallback;
               } catch (err2) {
                 throw fetchErr;
               }
@@ -185,12 +186,15 @@ export default {
 
           // Se retornar erro de handshake SSL do Cloudflare (525/526), tenta via HTTP
           if ((res.status === 525 || res.status === 526) && currentTarget.startsWith("https://")) {
-            currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
-            res = await fetch(currentTarget, {
-              method: request.method === "HEAD" ? "HEAD" : "GET",
-              headers: fetchHeaders,
-              redirect: "manual",
-            });
+            const httpFallback = currentTarget.replace(/^https:\/\//i, "http://").replace(/:443(?=\/|$)/, ":80");
+            try {
+              res = await fetch(httpFallback, {
+                method: request.method === "HEAD" ? "HEAD" : "GET",
+                headers: fetchHeaders,
+                redirect: "manual",
+              });
+              currentTarget = httpFallback;
+            } catch {}
           }
 
           if ([301, 302, 303, 307, 308].includes(res.status)) {
@@ -205,10 +209,6 @@ export default {
             } catch {
               currentTarget = loc;
             }
-            // Se o redirecionamento apontar para https em nó IPTV, prefere http para evitar falha SSL
-            if (currentTarget.startsWith("https://")) {
-              currentTarget = currentTarget.replace(/^https:\/\//i, "http://");
-            }
             continue;
           }
 
@@ -217,21 +217,21 @@ export default {
           break;
         }
 
-        if (!upstream) {
-          return new Response("Upstream unreachable", { status: 502, headers: corsHeaders });
+        if (!upstream || [301, 302, 303, 307, 308].includes(upstream.status)) {
+          return new Response("Upstream unreachable or redirect loop", { status: 502, headers: corsHeaders });
         }
 
         const upstreamContentType = (upstream.headers.get("Content-Type") || "").toLowerCase();
 
-        // Se o servidor IPTV retornou uma página HTML de erro (ex: 404 ou INVALID_CREDENTIALS do XUI.one),
-        // NÃO entregamos como stream 200 para evitar que o AVPlayer do iOS trave em tela preta
-        if (!looksLikeImage && upstreamContentType.includes("text/html") && !upstream.ok) {
+        // Se o servidor IPTV retornou uma página HTML (ex: erro 200/404 ou INVALID_STREAM_ID do XUI.one),
+        // NUNCA entregamos como stream de vídeo para evitar erro code 4 no AVPlayer do iOS
+        if (!looksLikeImage && (upstreamContentType.includes("text/html") || upstreamContentType.includes("text/plain"))) {
           return new Response(JSON.stringify({
             error: "IPTV_STREAM_ERROR",
-            message: "O servidor IPTV retornou erro ou credenciais inválidas para esta mídia.",
+            message: "O servidor IPTV retornou erro ou formato incompatível para este vídeo.",
             status: upstream.status
           }), {
-            status: upstream.status >= 400 ? upstream.status : 502,
+            status: 502,
             headers: { "Content-Type": "application/json", ...corsHeaders }
           });
         }
