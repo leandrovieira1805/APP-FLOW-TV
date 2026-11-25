@@ -59,11 +59,35 @@ export async function onRequest(context) {
   }
 
   try {
-    const upstream = await fetch(target, {
-      method: request.method,
-      headers: upstreamHeaders,
-      redirect: "follow",
-    });
+    let upstream;
+    try {
+      upstream = await fetch(target, {
+        method: request.method,
+        headers: upstreamHeaders,
+        redirect: "follow",
+      });
+      // Se retornar erro de SSL do Cloudflare (525/526) em HTTPS, tenta via HTTP
+      if ((upstream.status === 525 || upstream.status === 526) && target.startsWith("https://")) {
+        const httpTarget = target.replace(/^https:\/\//i, "http://");
+        upstream = await fetch(httpTarget, {
+          method: request.method,
+          headers: upstreamHeaders,
+          redirect: "follow",
+        });
+      }
+    } catch (fetchErr) {
+      // Se falhar no HTTPS (ex: certificado inválido/COMMON_NAME_INVALID comum em IPTV), tenta HTTP
+      if (target.startsWith("https://")) {
+        const httpTarget = target.replace(/^https:\/\//i, "http://");
+        upstream = await fetch(httpTarget, {
+          method: request.method,
+          headers: upstreamHeaders,
+          redirect: "follow",
+        });
+      } else {
+        throw fetchErr;
+      }
+    }
 
     // If it's an HLS playlist, rewrite relative and absolute paths to pass through this proxy
     if (isHls && upstream.ok) {

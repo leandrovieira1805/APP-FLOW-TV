@@ -696,6 +696,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       // Isso abre o player nativo em tela cheia com AirPlay, PiP, controles de volume e gestos.
       if (isIOS) {
         video!.src = finalUrl;
+        seekToStart();
 
         const enterIOSNative = () => {
           if (typeof (video as any).webkitEnterFullscreen === "function") {
@@ -707,21 +708,33 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           }
         };
 
-        const onNativeMeta = () => {
-          setLoading(false);
-          seekToStart();
-          if (autoPlay) {
+        // Dispara reprodução e entrada no player nativo imediatamente
+        enterIOSNative();
+        if (autoPlay) {
+          try {
             const playPromise = video!.play();
             if (playPromise && playPromise.then) {
               playPromise.then(() => {
                 enterIOSNative();
+                setLoading(false);
+                setPlaying(true);
               }).catch((err) => {
                 console.warn("iOS Autoplay blocked:", err);
+                setLoading(false);
                 setPlaying(false);
               });
             } else {
               enterIOSNative();
             }
+          } catch {}
+        }
+
+        const onNativeMeta = () => {
+          setLoading(false);
+          seekToStart();
+          enterIOSNative();
+          if (autoPlay && video!.paused) {
+            video!.play().then(() => enterIOSNative()).catch(() => {});
           }
         };
 
@@ -731,7 +744,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
           video!.addEventListener("loadedmetadata", onNativeMeta, { once: true });
           video!.addEventListener("loadeddata", onNativeMeta, { once: true });
           video!.addEventListener("canplay", onNativeMeta, { once: true });
-          try { video!.load(); } catch (e) {}
         }
         return;
       }
@@ -1799,8 +1811,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         </div>
       )}
 
-      {/* Center play button */}
-      {!Capacitor.isNativePlatform() && !playing && !loading && !error && (
+      {/* Center play button (Web não-iOS) */}
+      {!Capacitor.isNativePlatform() && !isIOS && !playing && !loading && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1811,6 +1823,30 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         >
           <span className="grid h-20 w-20 place-items-center rounded-full bg-primary/90 text-primary-foreground shadow-glow transition-transform hover:scale-105">
             <Play className="h-9 w-9 translate-x-0.5" fill="currentColor" />
+          </span>
+        </button>
+      )}
+
+      {/* Botão de toque direto no iOS caso o Safari bloqueie a reprodução automática */}
+      {isIOS && !playing && !loading && !error && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            const v = videoRef.current;
+            if (v) {
+              v.play().catch(() => {});
+              try {
+                (v as any).webkitEnterFullscreen();
+              } catch {}
+            }
+          }}
+          className="focusable absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/60 p-4"
+        >
+          <div className="grid h-20 w-20 place-items-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform active:scale-95">
+            <Play className="h-10 w-10 translate-x-0.5 fill-current" />
+          </div>
+          <span className="rounded-full bg-black/70 px-4 py-2 text-sm font-semibold text-white backdrop-blur">
+            Toque para abrir no Player Nativo
           </span>
         </button>
       )}
@@ -1845,8 +1881,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         </div>
       )}
 
-      {/* Controls bar */}
-      {!Capacitor.isNativePlatform() && (
+      {/* Controls bar (Apenas Desktop / Android Web - no iOS o AVPlayer nativo controla tudo) */}
+      {!Capacitor.isNativePlatform() && !isIOS && (
         <div
           className={`absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/90 to-transparent px-3 pb-3 pt-10 transition-opacity ${
             controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"

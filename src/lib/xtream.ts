@@ -708,13 +708,9 @@ function proxiedUrl(absoluteUrl: string, forceTranscode = false, forceProxy = fa
     return absoluteUrl;
   }
 
-  // Na Web: Se for live stream (.m3u8), SEMPRE passa pelo proxy do Worker para que o Worker
-  // faça o bypass automático de certificados autoassinados em IPs diretos (via sslip.io)
+  // Na Web e iOS: SEMPRE passa pelo proxy do Worker para que o Worker
+  // faça o bypass automático de CORS, User-Agent e certificados inválidos (SSL) em IPTV
   const isHls = /\.m3u8($|\?)/i.test(absoluteUrl);
-  if (!forceProxy && !isHls && absoluteUrl.startsWith("https://")) {
-    return absoluteUrl;
-  }
-
   const path = isHls ? "/api/public/stream.m3u8" : "/api/public/stream";
   const ext = isHls ? "&ext=.m3u8" : "";
 
