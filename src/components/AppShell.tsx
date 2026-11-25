@@ -1,5 +1,6 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   Tv,
   Film,
@@ -43,61 +44,51 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [renewLoading, setRenewLoading] = useState(false);
+  const [renewErrorMsg, setRenewErrorMsg] = useState<string | null>(null);
 
   const hasBg = !!settings.background;
 
   const handleLogout = () => {
     setShowAccountModal(false);
+    setRenewErrorMsg(null);
     logout();
     navigate({ to: "/login" });
   };
 
-  const usernameDisplay = userInfo?.username || account?.user || "Minha Conta";
+  const usernameDisplay = userInfo?.username || (account as any)?.username || account?.user || "Minha Conta";
 
   const handleOpenRenew = async () => {
     setRenewLoading(true);
+    setRenewErrorMsg(null);
     let payUrl = "";
 
-    // 1. Tenta recuperar do localStorage
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("flowtv_user_pay_url");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.username === usernameDisplay && parsed.payUrl) {
-            payUrl = parsed.payUrl;
-          }
-        }
-      } catch (_) {}
-    }
+    const cleanUsername = userInfo?.username || (account as any)?.username || account?.user || "";
 
-    // 2. Se não estiver no localStorage, busca dinamicamente no backend pelo usuário
-    if (!payUrl && usernameDisplay && usernameDisplay !== "Minha Conta") {
+    if (cleanUsername && cleanUsername !== "Minha Conta") {
       try {
-        const res = await fetch(`/api/user-payurl?username=${encodeURIComponent(usernameDisplay)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.payUrl) {
-            payUrl = data.payUrl;
-            try {
-              localStorage.setItem("flowtv_user_pay_url", JSON.stringify({ username: usernameDisplay, payUrl }));
-            } catch (_) {}
-          }
+        const { getUserPayUrl, getStoredProviderCode } = await import("../lib/config.functions");
+        const specificUrl = await getUserPayUrl(cleanUsername, getStoredProviderCode(), false);
+        if (specificUrl) {
+          payUrl = specificUrl;
         }
       } catch (err) {
-        console.warn("[AppShell] Falha ao buscar payUrl:", err);
+        console.warn("[AppShell] Falha ao buscar payUrl individual:", err);
       }
-    }
-
-    // 3. Fallback para a área de planos do site oficial
-    if (!payUrl || payUrl.includes("undefined")) {
-      payUrl = "https://flowtv.duckdns.org/#planos";
     }
 
     setRenewLoading(false);
 
-    if (typeof window !== "undefined") {
-      window.open(payUrl, "_system");
+    if (payUrl) {
+      if (typeof window !== "undefined") {
+        window.open(payUrl, "_system");
+      }
+    } else {
+      const msg = "Nenhum link de renovação cadastrado para o seu usuário.";
+      setRenewErrorMsg(msg);
+      toast.info("Link de renovação não cadastrado", {
+        description: "Entre em contato com seu suporte ou provedor para renovar seu plano.",
+        duration: 5000,
+      });
     }
   };
 
@@ -259,7 +250,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Fechar Modal */}
             <button
               type="button"
-              onClick={() => setShowAccountModal(false)}
+              onClick={() => {
+                setShowAccountModal(false);
+                setRenewErrorMsg(null);
+              }}
               className="absolute top-5 right-5 rounded-full bg-white/10 p-2 text-slate-400 hover:bg-white/20 hover:text-white transition-colors"
             >
               <X className="h-5 w-5" />
@@ -331,6 +325,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </>
                 )}
               </button>
+
+              {/* Mensagem caso o link de renovação não esteja cadastrado */}
+              {renewErrorMsg && (
+                <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-200 text-left animate-in fade-in duration-200">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-300">Link de renovação não configurado</p>
+                    <p className="text-slate-300 mt-0.5 leading-relaxed">
+                      Não há link de renovação cadastrado para o seu usuário. Entre em contato com seu suporte ou provedor para renovar seu plano.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Botão de Sair */}
               <button

@@ -25,6 +25,8 @@ import {
   ArrowRight,
   UserCheck,
   ExternalLink,
+  Building2,
+  XCircle,
 } from "lucide-react";
 import {
   authenticateWithDnsFallback,
@@ -37,6 +39,14 @@ import { useAccount } from "../hooks/use-account";
 import { autoSyncLogin } from "../lib/auth";
 import { useAuth } from "../hooks/use-auth";
 import { useSettings } from "../hooks/use-settings";
+import {
+  getStoredProviderCode,
+  setStoredProviderCode,
+  recordUserLogin,
+  validateProviderCode,
+  HARDCODED_PROVIDER_CODE,
+  getConfig,
+} from "../lib/config.functions";
 import {
   getDeviceIdentifier,
   getLocalDeviceTrial,
@@ -101,6 +111,51 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("ENTRAR");
 
+  // Provedor ativo / Código de Parceiro
+  const isHardcodedProvider = Boolean(HARDCODED_PROVIDER_CODE);
+  const [providerCode, setProviderCode] = useState<string>(() => {
+    return getStoredProviderCode();
+  });
+  const [providerInput, setProviderInput] = useState<string>(() => {
+    return getStoredProviderCode();
+  });
+  const [providerValid, setProviderValid] = useState<boolean | null>(null);
+  const [validatingProvider, setValidatingProvider] = useState(false);
+
+  const handleProviderBlur = async () => {
+    const clean = providerInput.trim().toUpperCase();
+    if (!clean) {
+      setProviderValid(null);
+      setStoredProviderCode("");
+      setProviderCode("");
+      queryClient.invalidateQueries({ queryKey: ["app-config"] });
+      return;
+    }
+
+    setValidatingProvider(true);
+    const res = await validateProviderCode(clean);
+    setValidatingProvider(false);
+
+    if (!res.valid) {
+      setProviderValid(false);
+      setStoredProviderCode("");
+      setProviderCode("");
+      queryClient.invalidateQueries({ queryKey: ["app-config"] });
+      toast.error("Provedor inválido", {
+        description: res.error || `O provedor "${clean}" não existe no sistema.`,
+      });
+      return;
+    }
+
+    setProviderValid(true);
+    setStoredProviderCode(clean);
+    setProviderCode(clean);
+    queryClient.invalidateQueries({ queryKey: ["app-config"] });
+    toast.success(`Provedor conectado: ${clean}`, {
+      description: res.provider?.name,
+    });
+  };
+
   // Modal Criar Conta / Teste
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -135,20 +190,49 @@ function LoginPage() {
     }
   }, []);
 
-  const executeLogin = async (userToAuth: string, passToAuth: string) => {
-    if (dnsList.length === 0) {
-      toast.error("Servidor não configurado", {
-        description: "Peça ao administrador para cadastrar a DNS na página de Admin.",
-      });
-      return;
-    }
+  const executeLogin = async (userToAuth: string, passToAuth: string, activeProv: string) => {
     setLoading(true);
-    setLoadingLabel("Conectando...");
+    setLoadingLabel("Carregando provedor...");
+
     try {
-      const { account: nextAccount, info } = await authenticateWithDnsFallback(dnsList, {
+      // 1. Busca configurações e DNS estritamente do provedor (SEM fallback para global)
+      let activeDns: string[] = [];
+      const cfg = await getConfig(activeProv);
+      if (cfg?.dnsList && cfg.dnsList.length > 0) {
+        activeDns = cfg.dnsList.map((d) => d.trim()).filter(Boolean);
+      }
+
+      if (activeDns.length === 0) {
+        toast.error("Servidor indisponível", {
+          description: `O provedor "${activeProv}" não possui servidores DNS configurados.`,
+        });
+        setLoading(false);
+        return;
+      }
+
+      setLoadingLabel("Conectando...");
+      const { account: nextAccount, info } = await authenticateWithDnsFallback(activeDns, {
         username: userToAuth,
         password: passToAuth,
       });
+
+      // 2. Valida status e limite de créditos do provedor
+      setLoadingLabel("Verificando licença...");
+      const provValidation = await recordUserLogin(
+        userToAuth,
+        nextAccount.base,
+        activeProv
+      );
+      if (!provValidation.ok) {
+        toast.error("Acesso não liberado", {
+          description:
+            provValidation.message ||
+            "Limite de clientes deste provedor foi atingido ou provedor desativado. Fale com seu provedor.",
+        });
+        setLoading(false);
+        return;
+      }
+
       login(nextAccount, info);
 
       // Auto-create backend account for cross-device sync
@@ -180,7 +264,7 @@ function LoginPage() {
         toast.error(err.message);
       } else {
         toast.error("Falha ao entrar", {
-          description: "Verifique seu usuário e senha ou teste sua conexão de internet.",
+          description: "Verifique o código do provedor, usuário e senha.",
         });
       }
       setLoading(false);
@@ -189,11 +273,39 @@ function LoginPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      toast.error("Preencha usuário e senha.");
+    const activeProv = (isHardcodedProvider ? HARDCODED_PROVIDER_CODE : providerInput).trim().toUpperCase();
+    if (!activeProv) {
+      toast.error("Código do Provedor Obrigatório", {
+        description: "Digite o código exato do provedor fornecido pelo seu revendedor.",
+      });
       return;
     }
-    await executeLogin(username.trim(), password.trim());
+
+    // Validação estrita se o provedor existe e está ativo (não suspenso)
+    setLoading(true);
+    setLoadingLabel("Verificando provedor...");
+    const provCheck = await validateProviderCode(activeProv);
+    if (!provCheck.valid) {
+      toast.error("Provedor inválido", {
+        description: provCheck.error || `O provedor "${activeProv}" não existe no sistema ou foi suspenso.`,
+      });
+      setLoading(false);
+      return;
+    }
+
+    if (!username.trim() || !password.trim()) {
+      toast.error("Preencha usuário e senha.");
+      setLoading(false);
+      return;
+    }
+
+    if (activeProv !== providerCode) {
+      setStoredProviderCode(activeProv);
+      setProviderCode(activeProv);
+      queryClient.invalidateQueries({ queryKey: ["app-config"] });
+    }
+
+    await executeLogin(username.trim(), password.trim(), activeProv);
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -391,6 +503,79 @@ function LoginPage() {
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
+            {/* Campo Código do Provedor */}
+            {isHardcodedProvider ? (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Provedor Integrado
+                </label>
+                <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-500/40 bg-emerald-950/30 px-4 py-3.5 text-emerald-300">
+                  <Building2 className="h-5 w-5 shrink-0 text-emerald-400" />
+                  <span className="font-mono text-base font-black tracking-wider text-white">
+                    {HARDCODED_PROVIDER_CODE}
+                  </span>
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Oficial
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Código do Provedor
+                  </label>
+                  {providerCode && providerValid !== false ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                      <CheckCircle2 className="h-3 w-3" /> Provedor Válido
+                    </span>
+                  ) : providerValid === false ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-400">
+                      <XCircle className="h-3 w-3" /> Provedor Não Encontrado
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-amber-400 font-medium">
+                      Obrigatório
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    backgroundColor: "#060B1A",
+                    borderColor: providerValid === false ? "#E11D48" : providerCode ? "#059669" : "#1E293B",
+                  }}
+                  className="group flex items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-white transition-all duration-300 focus-within:border-cyan-400 focus-within:shadow-[0_0_25px_rgba(0,229,255,0.35)]"
+                >
+                  <Building2 className={`h-5 w-5 shrink-0 transition-colors ${providerValid === false ? "text-rose-400" : "text-cyan-400 group-focus-within:text-cyan-300"}`} />
+                  <input
+                    type="text"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    placeholder="DIGITE O CÓDIGO (ex: PROV101)"
+                    value={providerInput}
+                    onChange={(e) => {
+                      setProviderInput(e.target.value.toUpperCase());
+                      setProviderValid(null);
+                    }}
+                    onBlur={handleProviderBlur}
+                    className="w-full bg-transparent text-base font-black uppercase tracking-wider text-white placeholder:text-slate-500 placeholder:normal-case placeholder:font-normal focus:outline-none"
+                  />
+                  {validatingProvider ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                  ) : providerInput && providerInput !== providerCode && (
+                    <button
+                      type="button"
+                      onClick={handleProviderBlur}
+                      className="rounded-lg bg-cyan-500/20 px-2.5 py-1 text-xs font-bold text-cyan-300 hover:bg-cyan-500 hover:text-slate-950 transition-colors cursor-pointer"
+                      title="Verificar se o provedor existe"
+                    >
+                      Verificar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Aviso se não houver DNS */}
             {dnsList.length === 0 && (
               <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-center text-xs font-semibold text-amber-300">

@@ -1,25 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { loadSettings, saveSettings, type AppSettings, SETTINGS_EVENT } from "../lib/storage";
-import { getConfig } from "../lib/config.functions";
+import { getConfig, getStoredProviderCode } from "../lib/config.functions";
 
 /**
- * Global app appearance settings (logo, background, banner, DNS list).
- * Stored server-side so every user sees the same branding configured by the
- * admin. localStorage is used only as an instant-render cache.
+ * Global or provider-specific app appearance settings (logo, background, banner, DNS list).
  */
-export function useSettings(): { settings: AppSettings; isLoading: boolean } {
+export function useSettings(providerCode?: string): { settings: AppSettings; isLoading: boolean } {
   const queryClient = useQueryClient();
+  const activeCode = (providerCode || getStoredProviderCode() || "global").toUpperCase();
 
   const { data } = useQuery<AppSettings>({
-    queryKey: ["app-config"],
+    queryKey: ["app-config", activeCode],
     staleTime: 30 * 60 * 1000, // 30 minutos
     refetchOnMount: "always",
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     queryFn: async () => {
       try {
-        const cfg = await getConfig();
+        const cfg = await getConfig(activeCode);
         const next: AppSettings = {
           logo: cfg.logo ?? undefined,
           background: cfg.background ?? undefined,
@@ -30,7 +29,9 @@ export function useSettings(): { settings: AppSettings; isLoading: boolean } {
           paymentInfo: cfg.paymentInfo,
           paymentStatus: cfg.paymentStatus,
         };
-        saveSettings(next);
+        if (activeCode === "GLOBAL") {
+          saveSettings(next);
+        }
         return next;
       } catch {
         return loadSettings();

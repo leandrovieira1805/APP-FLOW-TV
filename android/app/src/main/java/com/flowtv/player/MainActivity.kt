@@ -2,6 +2,7 @@ package com.flowtv.player
 
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebSettings
@@ -115,9 +116,103 @@ class MainActivity : BridgeActivity() {
         // Allow HTTP images inside the HTTPS WebView (Xtream IPTV panels serve
         // cover art over plain HTTP; without this the WebView blocks them as
         // mixed content and all thumbnails show blank).
-        bridge?.webView?.settings?.mixedContentMode =
-            WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        bridge?.webView?.settings?.userAgentString =
-            "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)"
+        bridge?.webView?.settings?.apply {
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            userAgentString = "IPTVSmartersPlayer/1.0.0 (Linux; Android 10)"
+            domStorageEnabled = true
+            databaseEnabled = true
+            useWideViewPort = true
+            loadWithOverviewMode = true
+        }
+    }
+
+    /**
+     * Intercepta os comandos de controles remotos de Android TV, Google TV e Amazon Fire TV / Fire Stick.
+     * Trata botão de voltar (Back), reproduzir/pausar, avançar, retroceder e menu.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        val action = event.action
+
+        if (action == KeyEvent.ACTION_DOWN) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_BACK -> {
+                    // Envia evento Escape/Back para a WebView para fechar modais, sair do player ou navegar
+                    bridge?.webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            const escEvent = new KeyboardEvent('keydown', {
+                                key: 'Escape',
+                                code: 'Escape',
+                                keyCode: 27,
+                                which: 27,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            document.dispatchEvent(escEvent);
+                            window.dispatchEvent(escEvent);
+                        })();
+                        """.trimIndent(), null
+                    )
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    bridge?.webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            const v = document.querySelector('video');
+                            if (v) {
+                                if (v.paused) { v.play().catch(function(){}); }
+                                else { v.pause(); }
+                            }
+                        })();
+                        """.trimIndent(), null
+                    )
+                }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    bridge?.webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            const v = document.querySelector('video');
+                            if (v && v.duration) {
+                                v.currentTime = Math.min(v.duration, v.currentTime + 10);
+                            }
+                        })();
+                        """.trimIndent(), null
+                    )
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    bridge?.webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            const v = document.querySelector('video');
+                            if (v) {
+                                v.currentTime = Math.max(0, v.currentTime - 10);
+                            }
+                        })();
+                        """.trimIndent(), null
+                    )
+                }
+                KeyEvent.KEYCODE_MENU -> {
+                    bridge?.webView?.evaluateJavascript(
+                        """
+                        (function() {
+                            const mEvent = new KeyboardEvent('keydown', {
+                                key: 'm',
+                                code: 'KeyM',
+                                keyCode: 77,
+                                which: 77,
+                                bubbles: true,
+                                cancelable: true
+                            });
+                            document.dispatchEvent(mEvent);
+                        })();
+                        """.trimIndent(), null
+                    )
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 }

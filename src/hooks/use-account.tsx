@@ -22,6 +22,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [blockedReason, setBlockedReason] = useState<string>("");
 
   const checkAccountStatus = useCallback((acc: Account | null, info: UserInfo | null) => {
     if (!acc) return;
@@ -65,12 +66,22 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       // Check stored expiry immediately
       checkAccountStatus(acc, info);
 
-      // Record user login to Supabase for Admin dashboard
-      import("../lib/config.functions").then(({ recordUserLogin }) => {
-        recordUserLogin(acc.username, acc.base).then((allowed) => {
-          if (!allowed) setIsBlocked(true);
-        });
-      });
+      // Checa bloqueio de usuário ou de provedor em tempo real no Supabase
+      const checkBlocked = async () => {
+        try {
+          const { checkUserAndProviderStatus } = await import("../lib/config.functions");
+          const res = await checkUserAndProviderStatus(acc.username);
+          if (!res.ok) {
+            setBlockedReason(res.message || "Acesso bloqueado pelo administrador.");
+            setIsBlocked(true);
+          } else {
+            setIsBlocked(false);
+          }
+        } catch (_) {}
+      };
+
+      checkBlocked();
+      const statusCheckInterval = setInterval(checkBlocked, 10000);
 
       // Backend sync check
       import("../lib/auth").then(({ autoSyncLogin }) => {
@@ -121,9 +132,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setUserInfo(info);
     setIsBlocked(false);
     setIsExpired(isAccountExpired(info));
-    import("../lib/config.functions").then(({ recordUserLogin }) => {
-      recordUserLogin(acc.username, acc.base).then((allowed) => {
-        if (!allowed) setIsBlocked(true);
+    import("../lib/config.functions").then(({ recordUserLogin, checkUserAndProviderStatus }) => {
+      checkUserAndProviderStatus(acc.username).then((res) => {
+        if (!res.ok) {
+          setBlockedReason(res.message || "Acesso bloqueado.");
+          setIsBlocked(true);
+        }
+      });
+      recordUserLogin(acc.username, acc.base).then((res) => {
+        if (res && res.ok === false) {
+          setBlockedReason(res.message || "Acesso bloqueado.");
+          setIsBlocked(true);
+        }
       });
     });
   }, []);
@@ -145,7 +165,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   if (isBlocked) {
     return (
       <AccountContext.Provider value={value}>
-        <BlockedScreen onLogout={logout} />
+        <BlockedScreen reason={blockedReason} onLogout={logout} />
       </AccountContext.Provider>
     );
   }
@@ -180,6 +200,7 @@ function ExpiredScreen({
 }) {
   const [checking, setChecking] = useState(false);
   const [renewLoading, setRenewLoading] = useState(false);
+  const [renewErrorMsg, setRenewErrorMsg] = useState<string | null>(null);
 
   const expMs = parseExpiryDate(userInfo?.exp_date);
   const formattedExpiry = expMs
@@ -207,48 +228,32 @@ function ExpiredScreen({
 
   const handleRenew = async () => {
     setRenewLoading(true);
+    setRenewErrorMsg(null);
     let payUrl = "";
 
-    // 1. Tenta recuperar do localStorage
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("flowtv_user_pay_url");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.username === account.username && parsed.payUrl) {
-            payUrl = parsed.payUrl;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 2. Se não estiver no localStorage, busca dinamicamente no backend pelo usuário
-    if (!payUrl && account.username) {
-      try {
-        const res = await fetch(`/api/user-payurl?username=${encodeURIComponent(account.username)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.payUrl) {
-            payUrl = data.payUrl;
-            try {
-              localStorage.setItem("flowtv_user_pay_url", JSON.stringify({ username: account.username, payUrl }));
-            } catch (_) {}
-          }
-        }
-      } catch (err) {
-        console.warn("[ExpiredScreen] Falha ao buscar payUrl:", err);
+    try {
+      const { getUserPayUrl, getStoredProviderCode } = await import("../lib/config.functions");
+      const url = await getUserPayUrl(account.username, getStoredProviderCode(), false);
+      if (url) {
+        payUrl = url;
       }
-    }
-
-    // 3. Fallback para a área de planos do site oficial
-    if (!payUrl || payUrl.includes("undefined")) {
-      payUrl = "https://flowtv.duckdns.org/#planos";
+    } catch (err) {
+      console.warn("[ExpiredScreen] Falha ao buscar payUrl:", err);
     }
 
     setRenewLoading(false);
 
-    if (typeof window !== "undefined") {
-      window.open(payUrl, "_system");
+    if (payUrl) {
+      if (typeof window !== "undefined") {
+        window.open(payUrl, "_system");
+      }
+    } else {
+      const msg = "Nenhum link de renovação cadastrado para o seu usuário.";
+      setRenewErrorMsg(msg);
+      toast.info("Link de renovação não cadastrado", {
+        description: "Entre em contato com o seu provedor ou suporte para renovar sua assinatura.",
+        duration: 5000,
+      });
     }
   };
 
@@ -332,6 +337,15 @@ function ExpiredScreen({
           )}
         </button>
 
+        {renewErrorMsg && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-xs text-amber-200 text-left animate-in fade-in">
+            <p className="font-bold text-amber-300">Link não configurado</p>
+            <p className="text-slate-300 mt-0.5 leading-relaxed">
+              {renewErrorMsg}
+            </p>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-3 pt-1">
           <button
@@ -381,10 +395,10 @@ function ExpiredScreen({
   );
 }
 
-function BlockedScreen({ onLogout }: { onLogout: () => void }) {
+function BlockedScreen({ reason, onLogout }: { reason?: string; onLogout: () => void }) {
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#030612] px-4 font-sans text-slate-100">
-      <div className="w-full max-w-md text-center space-y-6 rounded-2xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
+      <div className="w-full max-w-md text-center space-y-6 rounded-2xl border border-red-500/20 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl">
         {/* Icon */}
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-red-500/10 ring-1 ring-red-500/30 shadow-lg shadow-red-500/10">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -399,10 +413,10 @@ function BlockedScreen({ onLogout }: { onLogout: () => void }) {
         </h1>
         
         {/* Message */}
-        <p className="text-base text-slate-400 leading-relaxed">
-          Sua conta foi bloqueada pelo administrador.
+        <p className="text-base text-slate-300 leading-relaxed font-medium">
+          {reason || "Sua conta ou provedor foi suspenso pelo administrador."}
           <br />
-          Entre em contato com o suporte para mais informações.
+          <span className="text-xs text-slate-400 mt-2 block">Entre em contato com o suporte para mais informações.</span>
         </p>
 
         {/* Logout button */}
@@ -411,7 +425,7 @@ function BlockedScreen({ onLogout }: { onLogout: () => void }) {
             onLogout();
             window.location.href = '/login';
           }}
-          className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-8 py-3 text-sm font-semibold text-white transition-all hover:bg-white/20 active:scale-95"
+          className="inline-flex items-center gap-2 rounded-xl bg-red-600/30 border border-red-500/40 px-8 py-3 text-sm font-bold text-white transition-all hover:bg-red-600/50 active:scale-95 cursor-pointer"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
