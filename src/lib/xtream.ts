@@ -346,16 +346,15 @@ export async function authenticateWithDnsFallback(
     };
     return { account, info };
   }
-  const isHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
   const expandedBases: string[] = [];
   for (const b of bases) {
     const norm = normalizeBase(b);
     if (!norm) continue;
-    if (isHttpsPage && norm.startsWith("http://")) {
+    expandedBases.push(norm);
+    if (norm.startsWith("http://")) {
       const httpsVersion = norm.replace("http://", "https://").replace(/:80(?=\/|$)/, "");
       expandedBases.push(httpsVersion);
     }
-    expandedBases.push(norm);
   }
   const normalizedBases = Array.from(new Set(expandedBases));
 

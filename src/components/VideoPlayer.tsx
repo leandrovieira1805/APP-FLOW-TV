@@ -1157,7 +1157,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       }
 
       // If native player failed with format error (code 4), try HLS fallback (.m3u8)
-      if ((code === 3 || code === 4) && !hlsRef.current) {
+      if ((code === 3 || code === 4) && !hlsRef.current && !transcodeTriedRef.current) {
+        transcodeTriedRef.current = true;
         console.warn(`Native format/decode error (code ${code}). Attempting fallback HLS stream with transcode...`);
         setLoading(true);
 
@@ -1165,8 +1166,36 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
         const hlsUrl = buildFallbackHlsUrl(targetUrl);
         reportClientError(`stream-code${code}`, `raw=${buildTranscodeUrl(targetUrl)}`);
 
+        // No iOS: Safari não suporta MSE (hls.js). Reproduz HLS nativamente via <video src="...">
+        if (isIOS) {
+          console.log("iOS Safari: Usando fallback HLS nativo no elemento de vídeo:", hlsUrl);
+          if (v) {
+            v.src = hlsUrl;
+            v.load();
+            const p = v.play();
+            if (p && p.then) {
+              p.then(() => {
+                setLoading(false);
+                setPlaying(true);
+                try {
+                  (v as any).webkitEnterFullscreen();
+                } catch {}
+              }).catch(() => {
+                setLoading(false);
+              });
+            } else {
+              setLoading(false);
+            }
+          }
+          return;
+        }
+
         import("hls.js").then((HlsMod) => {
-          if (!HlsMod.default.isSupported()) return;
+          if (!HlsMod.default.isSupported()) {
+            setLoading(false);
+            setError("Formato de vídeo incompatível com este dispositivo.");
+            return;
+          }
           v.removeAttribute("src");
           v.load();
 
@@ -1828,7 +1857,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       )}
 
       {/* Botão de toque direto no iOS caso o Safari bloqueie a reprodução automática */}
-      {isIOS && !playing && !loading && !error && (
+      {isIOS && !playing && !error && (
         <button
           onClick={(e) => {
             e.stopPropagation();
