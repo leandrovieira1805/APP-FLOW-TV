@@ -740,7 +740,16 @@ export function vodStreamUrl(a: Account, streamId: number, ext = "mp4", title = 
     if (streamId === 203) return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
   }
-  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  let cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  // No iOS Safari / AVPlayer, o container MKV (.mkv) não é suportado pelo sistema.
+  // Forçar .mp4 faz o servidor IPTV entregar o stream no formato nativo compatível com Apple AVPlayer.
+  const isIOS = typeof navigator !== "undefined" && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+  if (isIOS && (cleanExt === "mkv" || cleanExt === "avi" || cleanExt === "flv" || cleanExt === "wmv")) {
+    cleanExt = "mp4";
+  }
   const rawUrl = `${a.base}/movie/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${streamId}.${cleanExt}`;
   return proxiedUrl(rawUrl);
 }
@@ -748,7 +757,14 @@ export function seriesStreamUrl(a: Account, episodeId: string, ext = "mp4", titl
   if (IS_DEMO_USER(a.username) || a.base === "mock://demo") {
     return "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4";
   }
-  const cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  let cleanExt = (ext || "mp4").toLowerCase().replace(/^\./, "");
+  const isIOS = typeof navigator !== "undefined" && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+  if (isIOS && (cleanExt === "mkv" || cleanExt === "avi" || cleanExt === "flv" || cleanExt === "wmv")) {
+    cleanExt = "mp4";
+  }
   const rawUrl = `${a.base}/series/${encodeURIComponent(a.username)}/${encodeURIComponent(a.password)}/${episodeId}.${cleanExt}`;
   return proxiedUrl(rawUrl);
 }

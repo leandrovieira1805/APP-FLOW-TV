@@ -9,9 +9,12 @@ function buildFallbackHlsUrl(targetUrl: string): string {
     const rawUrl = parsed.searchParams.get("url");
     if (rawUrl) {
       const hlsTarget = rawUrl.replace(/\.(mkv|mp4|avi|ts|flv|webm)($|\?)/i, ".m3u8$2");
-      hlsUrl = `/api/public/stream?url=${encodeURIComponent(hlsTarget)}&ext=.m3u8`;
-    } else if (!targetUrl.includes("ext=.m3u8")) {
-      hlsUrl = targetUrl + (targetUrl.includes("?") ? "&ext=.m3u8" : "?ext=.m3u8");
+      hlsUrl = `/api/public/stream.m3u8?url=${encodeURIComponent(hlsTarget)}&ext=.m3u8`;
+    } else {
+      hlsUrl = targetUrl.replace(/\/api\/public\/stream(\.mp4)?/i, "/api/public/stream.m3u8");
+      if (!hlsUrl.includes("ext=.m3u8")) {
+        hlsUrl += (hlsUrl.includes("?") ? "&ext=.m3u8" : "?ext=.m3u8");
+      }
     }
   } catch {
     if (!targetUrl.includes("ext=.m3u8")) {
@@ -1318,6 +1321,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       } catch (e) {
         console.warn("Screen orientation lock failed", e);
       }
+    } else if (typeof screen !== "undefined" && (screen as any).orientation?.lock) {
+      try {
+        await (screen as any).orientation.lock("landscape");
+      } catch {}
     }
   }, []);
 
@@ -1329,6 +1336,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(funct
       } catch (e) {
         console.warn("Screen orientation unlock failed", e);
       }
+    } else if (typeof screen !== "undefined" && (screen as any).orientation?.unlock) {
+      try {
+        (screen as any).orientation.unlock();
+      } catch {}
     }
   }, []);
 
